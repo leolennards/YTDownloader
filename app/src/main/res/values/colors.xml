@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- window background, stops a white flash before compose draws -->
+    <color name="ytd_background">#FFF7F3EC</color>
+</resources>

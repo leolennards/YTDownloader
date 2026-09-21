@@ -2,6 +2,16 @@
 
 An Android app that saves videos and music to your phone as MP3 or MP4. Everything runs on the device, there is no server. I built it as a personal project to practise Jetpack Compose and to learn how to run a native tool (yt-dlp) inside an Android app.
 
+## Screenshots
+
+<p>
+  <img src="docs/01-paste.png" width="180" alt="Paste a link">
+  <img src="docs/02-preview.png" width="180" alt="Video preview">
+  <img src="docs/03-downloading.png" width="180" alt="Downloading">
+  <img src="docs/04-queue.png" width="180" alt="Download queue">
+  <img src="docs/05-library.png" width="180" alt="Library">
+</p>
+
 ## What it does
 
 - Paste a link and save it as MP3 or MP4 (choose the quality for video)

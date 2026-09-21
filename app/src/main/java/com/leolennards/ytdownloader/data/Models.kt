@@ -76,6 +76,8 @@ data class QueueJob(
     // album name and track number for the mp3 tags
     val album: String? = null,
     val track: Int? = null,
+    // true while it waits for wifi
+    val waitingForWifi: Boolean = false,
 ) {
     val quality: String? get() = if (format == MediaFormat.MP4) "${height}p" else null
     val isActive: Boolean get() = status == JobStatus.Queued || status == JobStatus.Running

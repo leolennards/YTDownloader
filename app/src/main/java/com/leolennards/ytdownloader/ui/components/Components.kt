@@ -363,8 +363,13 @@ fun YtProgressBar(progress: Float, modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun DownloadRow(item: DownloadItem, modifier: Modifier = Modifier, onShare: (() -> Unit)? = null) {
-    YtCard(modifier = modifier.fillMaxWidth()) {
+fun DownloadRow(
+    item: DownloadItem,
+    modifier: Modifier = Modifier,
+    onShare: (() -> Unit)? = null,
+    onClick: (() -> Unit)? = null,
+) {
+    YtCard(modifier = modifier.fillMaxWidth().then(if (onClick != null) Modifier.ytClickable(onClick = onClick) else Modifier)) {
         Row(
             modifier = Modifier.padding(
                 start = 10.dp,
@@ -434,6 +439,7 @@ fun QueueJobCard(
     }
     val statusText = when {
         failed -> job.error ?: "Something went wrong."
+        job.status == JobStatus.Queued && job.waitingForWifi -> "Waiting for Wi-Fi"
         job.status == JobStatus.Queued -> "Waiting for a free slot"
         job.step == JobStep.Preparing -> "Getting ready"
         job.step == JobStep.Downloading -> "Downloading · ${(job.progress * 100).toInt()}%"

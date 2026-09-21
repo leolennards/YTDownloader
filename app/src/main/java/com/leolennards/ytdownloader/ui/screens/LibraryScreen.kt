@@ -4,7 +4,13 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.graphics.SolidColor
+import com.leolennards.ytdownloader.R
+import com.leolennards.ytdownloader.ui.components.YtIcon
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -49,6 +55,9 @@ fun LibraryScreen(
     onRetryJob: (String) -> Unit,
     onDismissJob: (String) -> Unit,
     onCancelAll: () -> Unit,
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onPlay: (DownloadItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -57,7 +66,9 @@ fun LibraryScreen(
         2 -> MediaFormat.MP4
         else -> null
     }
-    val filtered = items.filter { filter == null || it.format == filter }
+    val filtered = items.filter {
+        (filter == null || it.format == filter) && it.title.contains(query.trim(), ignoreCase = true)
+    }
     // done ones show in the saved list below, so only running or failed ones here
     val visibleJobs = jobs.filter { it.status != JobStatus.Done && (filter == null || it.format == filter) }
 
@@ -80,6 +91,40 @@ fun LibraryScreen(
             onFilterChange,
             modifier = Modifier.staggeredEntrance(1, "library-1"),
         )
+        // search box
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(YtDimens.Hairline, MaterialTheme.colorScheme.outline, RoundedCornerShape(50))
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .staggeredEntrance(2, "library-2"),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            YtIcon(R.drawable.ic_search, tint = MaterialTheme.colorScheme.onSurfaceVariant, size = 18.dp)
+            Box(Modifier.weight(1f)) {
+                if (query.isEmpty()) {
+                    Text(
+                        "Search your downloads",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                BasicTextField(
+                    value = query,
+                    onValueChange = { onQueryChange(it.take(60)) },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            if (query.isNotEmpty()) {
+                Box(Modifier.ytClickable { onQueryChange("") }) {
+                    YtIcon(R.drawable.ic_close, tint = MaterialTheme.colorScheme.onSurfaceVariant, size = 18.dp, contentDescription = "Clear")
+                }
+            }
+        }
         val activeCount = visibleJobs.count { it.isActive }
         AnimatedVisibility(visible = activeCount >= 2, enter = ytEnter(), exit = ytExit()) {
             Row(
@@ -122,7 +167,7 @@ fun LibraryScreen(
             if (filtered.isEmpty() && visibleJobs.isEmpty()) {
                 item {
                     Text(
-                        "Nothing here yet.",
+                        if (query.isNotBlank()) "No downloads match that." else "Nothing here yet.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -132,6 +177,7 @@ fun LibraryScreen(
                 DownloadRow(
                     item = item,
                     modifier = Modifier.animateItem(),
+                    onClick = item.uri?.let { { onPlay(item) } },
                     onShare = item.uri?.let { uri -> { share(context, item, uri) } },
                 )
             }

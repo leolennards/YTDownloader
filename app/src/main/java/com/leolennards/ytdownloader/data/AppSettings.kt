@@ -22,6 +22,8 @@ data class SettingsState(
     val folderName: String = "Downloader",
     // how many downloads can run at the same time
     val maxParallel: Int = 2,
+    // only start downloads on wifi
+    val wifiOnly: Boolean = false,
 )
 
 // keeps the settings in SharedPreferences
@@ -44,6 +46,7 @@ object AppSettings {
             shareHeight = prefs.getInt("shareHeight", defaults.shareHeight),
             folderName = prefs.getString("folderName", defaults.folderName) ?: defaults.folderName,
             maxParallel = prefs.getInt("maxParallel", defaults.maxParallel).coerceIn(1, 3),
+            wifiOnly = prefs.getBoolean("wifiOnly", defaults.wifiOnly),
         )
     }
 
@@ -58,6 +61,7 @@ object AppSettings {
             .putInt("shareHeight", s.shareHeight)
             .putString("folderName", s.folderName)
             .putInt("maxParallel", s.maxParallel)
+            .putBoolean("wifiOnly", s.wifiOnly)
             .apply()
     }
 }

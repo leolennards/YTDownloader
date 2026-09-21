@@ -22,8 +22,10 @@ An Android app that saves videos and music to your phone as MP3 or MP4. Everythi
 - A notification shows the progress while the app is closed
 - Share a link from YouTube to the app, and it can start downloading straight away (turn this on in Settings, and choose MP3 or MP4)
 - Failed downloads try again automatically, and you can retry them by hand
-- A library screen with everything you have downloaded, with a share button
-- Settings for the default format and quality, the save folder name, how many downloads run at once, and a button to update yt-dlp by hand
+- A library screen with everything you have downloaded, a search box, and a share button
+- Play your MP3 and MP4 files inside the app
+- Option to only download on Wi-Fi, so it does not use mobile data
+- Settings for the default format and quality, the save folder name, how many downloads run at once, Wi-Fi only, and a button to update yt-dlp by hand
 - Light and dark theme
 
 ## Built with

@@ -1,6 +1,9 @@
 package com.leolennards.ytdownloader.data
 
 import android.app.Application
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.content.ContentValues
 import android.content.Intent
 import android.graphics.Bitmap
@@ -176,6 +179,31 @@ object DownloadController {
         }
     }
 
+    // true on wifi or ethernet
+    private fun onWifi(): Boolean {
+        val cm = app.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
+        return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+    }
+
+    // holds the job back until wifi is there, if wifi only is on
+    private suspend fun waitForWifi(id: String) {
+        var waiting = false
+        while (AppSettings.state.value.wifiOnly && !onWifi()) {
+            if (!waiting) {
+                waiting = true
+                setWaiting(id, true)
+            }
+            delay(3000)
+        }
+        if (waiting) setWaiting(id, false)
+    }
+
+    private fun setWaiting(id: String, value: Boolean) {
+        _queue.update { list -> list.map { if (it.id == id) it.copy(waitingForWifi = value) else it } }
+    }
+
     private fun freeSlot() {
         running.update { it - 1 }
     }
@@ -253,6 +281,7 @@ object DownloadController {
         jobs.forEachIndexed { index, job ->
             val knownTitle = entries[index].second
             handles[job.id] = scope.launch {
+                waitForWifi(job.id)
                 takeSlot()
                 try {
                     runJob(job, knownTitle)

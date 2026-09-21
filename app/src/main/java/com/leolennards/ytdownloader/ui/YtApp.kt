@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.leolennards.ytdownloader.data.AppSettings
 import com.leolennards.ytdownloader.data.DownloadController
+import com.leolennards.ytdownloader.data.DownloadItem
 import com.leolennards.ytdownloader.data.FetchState
 import com.leolennards.ytdownloader.data.JobStatus
 import com.leolennards.ytdownloader.data.MediaFormat
@@ -54,6 +55,7 @@ import com.leolennards.ytdownloader.ui.components.YtBottomBar
 import com.leolennards.ytdownloader.ui.screens.DownloadingScreen
 import com.leolennards.ytdownloader.ui.screens.LibraryScreen
 import com.leolennards.ytdownloader.ui.screens.PasteLinkScreen
+import com.leolennards.ytdownloader.ui.screens.PlayerScreen
 import com.leolennards.ytdownloader.ui.screens.PreviewScreen
 import com.leolennards.ytdownloader.ui.screens.QualityHeights
 import com.leolennards.ytdownloader.ui.screens.SettingsScreen
@@ -73,6 +75,7 @@ enum class Screen(val depth: Int) {
     Preview(1),
     Downloading(2),
     Settings(0),
+    Player(2),
 }
 
 
@@ -92,6 +95,9 @@ fun YtApp(
         mutableIntStateOf(QualityHeights.indexOf(AppSettings.state.value.defaultHeight).coerceAtLeast(0))
     }
     var libraryFilter by rememberSaveable { mutableIntStateOf(0) }
+    var libraryQuery by rememberSaveable { mutableStateOf("") }
+    // the file open in the player
+    var playing by remember { mutableStateOf<DownloadItem?>(null) }
     var focusJobId by rememberSaveable { mutableStateOf<String?>(null) }
 
     val fetch by DownloadController.fetchState.collectAsState()
@@ -209,7 +215,7 @@ fun YtApp(
     }
 
     BackHandler(enabled = screen != Screen.Paste) {
-        screen = Screen.Paste
+        screen = if (screen == Screen.Player) Screen.Library else Screen.Paste
     }
 
     val motion = LocalMotionEnabled.current
@@ -310,7 +316,22 @@ fun YtApp(
                         onRetryJob = { DownloadController.retry(it) },
                         onDismissJob = { DownloadController.dismiss(it) },
                         onCancelAll = { DownloadController.cancelAll() },
+                        query = libraryQuery,
+                        onQueryChange = { libraryQuery = it },
+                        onPlay = {
+                            playing = it
+                            screen = Screen.Player
+                        },
                     )
+
+                    Screen.Player -> {
+                        val current = playing
+                        if (current == null) {
+                            LaunchedEffect(Unit) { screen = Screen.Library }
+                        } else {
+                            PlayerScreen(item = current, onBack = { screen = Screen.Library })
+                        }
+                    }
 
                     Screen.Settings -> SettingsScreen(
                         settings = settings,

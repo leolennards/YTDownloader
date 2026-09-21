@@ -39,3 +39,16 @@ fun relativeDay(savedAtMs: Long, nowMs: Long = System.currentTimeMillis()): Stri
         else -> SimpleDateFormat("d MMM yyyy", Locale.getDefault()).format(Date(savedAtMs))
     }
 }
+
+private val musicNoise = Regex(
+    """\s*[(\[]\s*(?:official\s+)?(?:music\s+|lyric\s+)?(?:audio|video|lyrics?|visuali[sz]er)\s*[)\]]""",
+    RegexOption.IGNORE_CASE,
+)
+
+// "Drake - Not You Too (Audio) ft. Chris Brown" -> "Not You Too ft. Chris Brown"
+fun cleanMusicTitle(raw: String): String {
+    var title = raw.replace(musicNoise, "").replace(Regex("\\s+"), " ").trim()
+    val dash = title.indexOf(" - ")
+    if (dash > 0 && dash < title.length - 3) title = title.substring(dash + 3).trim()
+    return title.ifBlank { raw }
+}

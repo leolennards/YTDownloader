@@ -7,7 +7,7 @@ An Android app that saves videos and music to your phone as MP3 or MP4. Everythi
 - Paste a link and save it as MP3 or MP4 (choose the quality for video)
 - Paste several links at once and they all go into a queue
 - Paste a playlist or an album link and every track is added to the queue
-- Up to 3 downloads run at the same time
+- Up to 2 downloads run at the same time
 - MP3 files get tags and cover art, and albums get their own folder with track numbers
 - A notification shows the progress while the app is closed
 - Failed downloads try again automatically, and you can retry them by hand

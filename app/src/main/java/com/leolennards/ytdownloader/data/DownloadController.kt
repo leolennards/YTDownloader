@@ -19,6 +19,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -42,9 +44,12 @@ import java.util.concurrent.atomic.AtomicLong
 // downloads go in a queue and up to MAX_PARALLEL run at once
 object DownloadController {
     private const val TAG = "DownloadController"
-    private const val MAX_PARALLEL = 3
-    private const val QUICK_FRAGMENTS = "4"
+    private const val MAX_PARALLEL = 2
+    private const val QUICK_FRAGMENTS = "2"
     private const val MAX_PLAYLIST = 200
+    // things like (Audio) or [Official Music Video] in a title, for yt-dlp (python regex)
+    private const val MUSIC_NOISE_REGEX =
+        "(?i)\\s*[(\\[]\\s*(?:official\\s+)?(?:music\\s+|lyric\\s+)?(?:audio|video|lyrics?|visuali[sz]er)\\s*[)\\]]"
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private lateinit var app: Application
@@ -77,18 +82,28 @@ object DownloadController {
             try {
                 YoutubeDL.getInstance().init(app)
                 FFmpeg.getInstance().init(app)
-                _init.value = InitState.Ready
             } catch (e: Exception) {
                 Log.e(TAG, "youtubedl-android failed to initialise", e)
                 _init.value = InitState.Failed(e.message ?: "Could not start the download engine.")
                 return@launch
             }
-            // sites change a lot so update yt-dlp. if it fails the built in copy still works
-            try {
-                YoutubeDL.getInstance().updateYoutubeDL(app)
-            } catch (e: Exception) {
-                Log.w(TAG, "yt-dlp update failed", e)
+            // youtube changes a lot and an old yt-dlp gets blocked (403 errors), so update it before
+            // the first download. nightly is the newest. wait 25 seconds at most so a bad connection
+            // doesnt block the app, the built in copy still works if the update fails
+            val update = scope.async {
+                try {
+                    YoutubeDL.getInstance().updateYoutubeDL(app, YoutubeDL.UpdateChannel.NIGHTLY)
+                } catch (e: Exception) {
+                    Log.w(TAG, "nightly update failed, trying stable", e)
+                    try {
+                        YoutubeDL.getInstance().updateYoutubeDL(app, YoutubeDL.UpdateChannel.STABLE)
+                    } catch (e2: Exception) {
+                        Log.w(TAG, "yt-dlp update failed", e2)
+                    }
+                }
             }
+            withTimeoutOrNull(25_000) { update.await() }
+            _init.value = InitState.Ready
         }
     }
 
@@ -283,7 +298,9 @@ object DownloadController {
             val engine = _init.first { it !is InitState.Initializing }
             if (engine is InitState.Failed) error(engine.message)
 
-            val title = knownTitle ?: (YoutubeDL.getInstance().getInfo(singleVideo(url)).title ?: "Untitled")
+            val rawTitle = knownTitle ?: (YoutubeDL.getInstance().getInfo(singleVideo(url)).title ?: "Untitled")
+            // for music, drop the "Artist - " at the start and stuff like (Audio), the artist is already in the tags
+            val title = if (format == MediaFormat.MP3) cleanMusicTitle(rawTitle) else rawTitle
             update(id) { it.copy(title = title, step = JobStep.Downloading) }
 
             val request = YoutubeDLRequest(url)
@@ -291,6 +308,9 @@ object DownloadController {
             request.addOption("-o", File(dir, "$id.%(ext)s").absolutePath)
             // download a few fragments at once, much faster on youtube
             request.addOption("--concurrent-fragments", QUICK_FRAGMENTS)
+            // youtube links are tied to the ip, and phones can switch between ipv4 and ipv6 in the
+            // middle of a download which gives 403 errors, so stick to ipv4
+            request.addOption("--force-ipv4")
             request.addOption("--retries", "5")
             request.addOption("--fragment-retries", "5")
             if (format == MediaFormat.MP3) {
@@ -301,7 +321,20 @@ object DownloadController {
                 // tags and cover art so it looks right in a music player
                 request.addOption("--embed-metadata")
                 request.addOption("--embed-thumbnail")
-                request.addOption("--convert-thumbnails", "jpg")
+                // youtube thumbnails are often wide with black bars, so crop the cover to a square in the middle.
+                // png because yt-dlp only converts (and so only crops) when the format changes
+                request.addOption("--convert-thumbnails", "png")
+                request.addOption(
+                    "--postprocessor-args",
+                    "ThumbnailsConvertor+FFmpeg_o:-c:v png -vf crop=\"'min(iw,ih)':'min(iw,ih)'\",scale=600:600",
+                )
+                // same clean up for the title tag, and use the "Artist - " part as the artist tag when there is one
+                request.addCommands(
+                    listOf(
+                        "--replace-in-metadata", "title", MUSIC_NOISE_REGEX, "",
+                        "--parse-metadata", "title:(?P<meta_artist>.+?) - (?P<meta_title>.+)",
+                    ),
+                )
                 job.track?.let {
                     request.addOption("--parse-metadata", "%(id&$it|$it)s:%(meta_track)s")
                 }
@@ -355,10 +388,12 @@ object DownloadController {
                         it.contains("HTTP", ignoreCase = true) || it.contains("timed out", ignoreCase = true) ||
                             it.contains("connection", ignoreCase = true)
                     }
-                    if (id in cancelled || attempt >= 3 || !transient) throw e
+                    if (id in cancelled || attempt >= 4 || !transient) throw e
                     Log.w(TAG, "download attempt $attempt failed, retrying", e)
                     update(id) { it.copy(progress = 0f, step = JobStep.Preparing) }
-                    delay(2000L * attempt)
+                    // wait longer each time, and go slower (one connection) since too many at once can get blocked
+                    delay(3000L * attempt)
+                    request.addOption("--concurrent-fragments", "1")
                     update(id) { it.copy(step = JobStep.Downloading) }
                 }
             }
@@ -448,6 +483,6 @@ object DownloadController {
     private fun friendlyMessage(e: Exception): String {
         val message = e.message.orEmpty()
         val errorLine = message.lines().lastOrNull { it.contains("ERROR", ignoreCase = true) }
-        return (errorLine ?: message).trim().ifBlank { "Something went wrong." }.take(220)
+        return (errorLine ?: message).trim().ifBlank { "Something went wrong." }.take(300)
     }
 }

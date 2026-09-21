@@ -466,7 +466,8 @@ fun QueueJobCard(
                             job.status == JobStatus.Running -> YtTheme.colors.goldText
                             else -> MaterialTheme.colorScheme.onSurfaceVariant
                         },
-                        maxLines = 2,
+                        // show the whole error when it failed so its possible to see what went wrong
+                        maxLines = if (failed) 8 else 2,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }

@@ -75,8 +75,6 @@ enum class Screen(val depth: Int) {
     Settings(0),
 }
 
-// video quality used when adding straight from the paste screen
-private const val QUICK_HEIGHT = 720
 
 // simple navigation with state, no navigation library needed
 @Composable
@@ -88,8 +86,11 @@ fun YtApp(
 ) {
     var screen by rememberSaveable { mutableStateOf(Screen.Paste) }
     var url by rememberSaveable { mutableStateOf("") }
-    var formatIndex by rememberSaveable { mutableIntStateOf(1) } // 0 = mp3, 1 = mp4
-    var qualityIndex by rememberSaveable { mutableIntStateOf(1) }
+    // start with the defaults from the settings. 0 = mp3, 1 = mp4
+    var formatIndex by rememberSaveable { mutableIntStateOf(AppSettings.state.value.defaultFormatIndex) }
+    var qualityIndex by rememberSaveable {
+        mutableIntStateOf(QualityHeights.indexOf(AppSettings.state.value.defaultHeight).coerceAtLeast(0))
+    }
     var libraryFilter by rememberSaveable { mutableIntStateOf(0) }
     var focusJobId by rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -97,6 +98,9 @@ fun YtApp(
     val queue by DownloadController.queue.collectAsState()
     val history by DownloadController.history.collectAsState()
     val settings by AppSettings.state.collectAsState()
+    val engineVersion by DownloadController.engineVersion.collectAsState()
+    val updatingEngine by DownloadController.updating.collectAsState()
+    val updateMessage by DownloadController.updateMessage.collectAsState()
     val items = history.map { it.toItem() }
 
     val active = queue.filter { it.isActive }
@@ -250,7 +254,7 @@ fun YtApp(
                         },
                         onQueue = { links ->
                             withNotificationPermission {
-                                val message = queueLinks(links, format, QUICK_HEIGHT)
+                                val message = queueLinks(links, format, settings.defaultHeight)
                                 url = ""
                                 haptics.confirm()
                                 showToast(message)
@@ -269,6 +273,7 @@ fun YtApp(
                         onQualityChange = { qualityIndex = it },
                         onBack = { screen = Screen.Paste },
                         onRetry = { DownloadController.fetch(url.trim()) },
+                        saveFolder = settings.folderName.trim().ifBlank { "Downloader" },
                         onDownload = {
                             (fetch as? FetchState.Ready)?.let { ready ->
                                 withNotificationPermission {
@@ -310,6 +315,10 @@ fun YtApp(
                     Screen.Settings -> SettingsScreen(
                         settings = settings,
                         onChange = { new -> AppSettings.update { new } },
+                        engineVersion = engineVersion,
+                        updating = updatingEngine,
+                        updateMessage = updateMessage,
+                        onUpdate = { DownloadController.updateEngine() },
                     )
                 }
             }

@@ -61,6 +61,8 @@ fun PreviewScreen(
     onBack: () -> Unit,
     onRetry: () -> Unit,
     onDownload: () -> Unit,
+    // folder name from the settings
+    saveFolder: String,
     modifier: Modifier = Modifier,
 ) {
     val ready = fetch as? FetchState.Ready
@@ -237,7 +239,7 @@ fun PreviewScreen(
                 }
 
                 YtCard(Modifier.fillMaxWidth()) {
-                    InfoRow("Saves to", if (isVideo) "Movies / Downloader" else "Music / Downloader")
+                    InfoRow("Saves to", if (isVideo) "Movies / $saveFolder" else "Music / $saveFolder")
                     HorizontalDivider(thickness = YtDimens.Hairline, color = MaterialTheme.colorScheme.outline)
                     InfoRow("Length", formatDuration(ready.meta.durationSeconds))
                 }

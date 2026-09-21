@@ -29,11 +29,10 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import java.io.File
 import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
@@ -41,10 +40,9 @@ import java.util.concurrent.atomic.AtomicLong
 
 // handles everything that uses youtubedl-android.
 // its a singleton so downloads dont depend on which screen is open.
-// downloads go in a queue and up to MAX_PARALLEL run at once
+// downloads go in a queue and a few run at once (set in the settings)
 object DownloadController {
     private const val TAG = "DownloadController"
-    private const val MAX_PARALLEL = 2
     private const val QUICK_FRAGMENTS = "2"
     private const val MAX_PLAYLIST = 200
     // things like (Audio) or [Official Music Video] in a title, for yt-dlp (python regex)
@@ -54,7 +52,9 @@ object DownloadController {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private lateinit var app: Application
 
-    private val permits = Semaphore(MAX_PARALLEL)
+    // how many downloads run right now, and how many are allowed (from the settings)
+    private val running = MutableStateFlow(0)
+    private val limit = MutableStateFlow(2)
     private val handles = ConcurrentHashMap<String, Job>()
     private val cancelled = ConcurrentHashMap.newKeySet<String>()
     private val sequence = AtomicLong()
@@ -75,9 +75,20 @@ object DownloadController {
 
     private var fetchJob: Job? = null
 
+    // yt-dlp version and manual update state, shown in the settings screen
+    private val _engineVersion = MutableStateFlow<String?>(null)
+    private val _updating = MutableStateFlow(false)
+    private val _updateMessage = MutableStateFlow<String?>(null)
+    val engineVersion: StateFlow<String?> = _engineVersion.asStateFlow()
+    val updating: StateFlow<Boolean> = _updating.asStateFlow()
+    val updateMessage: StateFlow<String?> = _updateMessage.asStateFlow()
+
     fun init(application: Application) {
         app = application
         _history.value = HistoryStore.load(app)
+        scope.launch {
+            AppSettings.state.collect { limit.value = it.maxParallel.coerceIn(1, 3) }
+        }
         scope.launch {
             try {
                 YoutubeDL.getInstance().init(app)
@@ -88,23 +99,85 @@ object DownloadController {
                 return@launch
             }
             // youtube changes a lot and an old yt-dlp gets blocked (403 errors), so update it before
-            // the first download. nightly is the newest. wait 25 seconds at most so a bad connection
-            // doesnt block the app, the built in copy still works if the update fails
+            // the first download. wait 25 seconds at most so a bad connection doesnt block the app,
+            // the built in copy still works if the update fails
             val update = scope.async {
                 try {
-                    YoutubeDL.getInstance().updateYoutubeDL(app, YoutubeDL.UpdateChannel.NIGHTLY)
+                    updateEngineBlocking()
                 } catch (e: Exception) {
-                    Log.w(TAG, "nightly update failed, trying stable", e)
-                    try {
-                        YoutubeDL.getInstance().updateYoutubeDL(app, YoutubeDL.UpdateChannel.STABLE)
-                    } catch (e2: Exception) {
-                        Log.w(TAG, "yt-dlp update failed", e2)
-                    }
+                    Log.w(TAG, "yt-dlp update failed", e)
                 }
             }
             withTimeoutOrNull(25_000) { update.await() }
             _init.value = InitState.Ready
+            refreshVersion()
         }
+    }
+
+    // nightly is the newest, stable is the fallback. returns DONE or ALREADY_UP_TO_DATE
+    private fun updateEngineBlocking(): String? {
+        return try {
+            YoutubeDL.getInstance().updateYoutubeDL(app, YoutubeDL.UpdateChannel.NIGHTLY)?.name
+        } catch (e: Exception) {
+            Log.w(TAG, "nightly update failed, trying stable", e)
+            YoutubeDL.getInstance().updateYoutubeDL(app, YoutubeDL.UpdateChannel.STABLE)?.name
+        }
+    }
+
+    private fun refreshVersion() {
+        _engineVersion.value = try {
+            YoutubeDL.getInstance().version(app)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    // the update button in the settings
+    fun updateEngine() {
+        if (_updating.value) return
+        // swapping yt-dlp while files are downloading could break them
+        if (_queue.value.any { it.isActive }) {
+            _updateMessage.value = "Wait for your downloads to finish first"
+            return
+        }
+        _updating.value = true
+        _updateMessage.value = null
+        scope.launch {
+            try {
+                _init.first { it !is InitState.Initializing }
+                val result = updateEngineBlocking()
+                refreshVersion()
+                _updateMessage.value = when (result) {
+                    "DONE" -> "Updated to the latest version"
+                    "ALREADY_UP_TO_DATE" -> "Already up to date"
+                    else -> "Update finished"
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "manual update failed", e)
+                _updateMessage.value = "Could not update: ${friendlyMessage(e).take(80)}"
+            } finally {
+                _updating.value = false
+            }
+        }
+    }
+
+    // waits until fewer downloads than the limit are running, then takes a slot
+    private suspend fun takeSlot() {
+        while (true) {
+            var taken = false
+            running.update { r ->
+                taken = r < limit.value
+                if (taken) r + 1 else r
+            }
+            if (taken) return
+            combine(running, limit) { r, l -> r < l }.first { it }
+        }
+    }
+
+    private fun freeSlot() {
+        running.update { it - 1 }
     }
 
     // ---- looking up one video for the preview screen ----
@@ -180,7 +253,12 @@ object DownloadController {
         jobs.forEachIndexed { index, job ->
             val knownTitle = entries[index].second
             handles[job.id] = scope.launch {
-                permits.withPermit { runJob(job, knownTitle) }
+                takeSlot()
+                try {
+                    runJob(job, knownTitle)
+                } finally {
+                    freeSlot()
+                }
             }
         }
         return jobs.map { it.id }
@@ -445,7 +523,7 @@ object DownloadController {
                 put(MediaStore.MediaColumns.MIME_TYPE, mime)
                 put(
                     MediaStore.MediaColumns.RELATIVE_PATH,
-                    (if (isAudio) Environment.DIRECTORY_MUSIC else Environment.DIRECTORY_MOVIES) + "/Downloader" + (folder?.let { "/$it" } ?: ""),
+                    (if (isAudio) Environment.DIRECTORY_MUSIC else Environment.DIRECTORY_MOVIES) + "/" + baseFolder() + (folder?.let { "/$it" } ?: ""),
                 )
                 put(MediaStore.MediaColumns.IS_PENDING, 1)
             }
@@ -461,7 +539,7 @@ object DownloadController {
         // android 8 and 9, use the app folder so no storage permission is needed
         val target = File(
             app.getExternalFilesDir(if (isAudio) Environment.DIRECTORY_MUSIC else Environment.DIRECTORY_MOVIES),
-            "Downloader" + (folder?.let { "/$it" } ?: ""),
+            baseFolder() + (folder?.let { "/$it" } ?: ""),
         ).apply { mkdirs() }
         val dest = File(target, displayName)
         file.copyTo(dest, overwrite = true)
@@ -475,6 +553,12 @@ object DownloadController {
         } catch (e: Exception) {
             null
         }
+    }
+
+    // main folder inside Music and Movies, from the settings
+    private fun baseFolder(): String {
+        val raw = AppSettings.state.value.folderName.trim()
+        return if (raw.isBlank()) "Downloader" else sanitize(raw).trim('.', ' ').ifBlank { "Downloader" }
     }
 
     private fun sanitize(name: String): String =

@@ -17,12 +17,13 @@ An Android app that saves videos and music to your phone as MP3 or MP4. Everythi
 - Paste a link and save it as MP3 or MP4 (choose the quality for video)
 - Paste several links at once and they all go into a queue
 - Paste a playlist or an album link and every track is added to the queue
-- Up to 2 downloads run at the same time
+- Several downloads run at the same time (you choose 1 to 3 in Settings)
 - MP3 files get tags and cover art, and albums get their own folder with track numbers
 - A notification shows the progress while the app is closed
 - Share a link from YouTube to the app, and it can start downloading straight away (turn this on in Settings, and choose MP3 or MP4)
 - Failed downloads try again automatically, and you can retry them by hand
 - A library screen with everything you have downloaded, with a share button
+- Settings for the default format and quality, the save folder name, how many downloads run at once, and a button to update yt-dlp by hand
 - Light and dark theme
 
 ## Built with
@@ -47,6 +48,10 @@ No navigation library and no database, to keep the dependencies small. The scree
 ## The design
 
 I wanted it to look calm and clean: cream and near black backgrounds, a gold accent, rounded pill buttons and thin borders. The font is Manrope. Animations use springs and turn off if the system animations are off.
+
+## Tests
+
+There are unit tests for the link detection and the title cleaning in `app/src/test`. Run them with `./gradlew test`.
 
 ## Running it
 

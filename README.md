@@ -20,6 +20,7 @@ An Android app that saves videos and music to your phone as MP3 or MP4. Everythi
 - Up to 2 downloads run at the same time
 - MP3 files get tags and cover art, and albums get their own folder with track numbers
 - A notification shows the progress while the app is closed
+- Share a link from YouTube to the app, and it can start downloading straight away (turn this on in Settings, and choose MP3 or MP4)
 - Failed downloads try again automatically, and you can retry them by hand
 - A library screen with everything you have downloaded, with a share button
 - Light and dark theme

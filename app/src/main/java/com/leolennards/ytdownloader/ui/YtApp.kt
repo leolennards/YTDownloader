@@ -2,6 +2,7 @@ package com.leolennards.ytdownloader.ui
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.widget.Toast
 import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -38,11 +39,13 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.leolennards.ytdownloader.data.AppSettings
 import com.leolennards.ytdownloader.data.DownloadController
 import com.leolennards.ytdownloader.data.FetchState
 import com.leolennards.ytdownloader.data.JobStatus
 import com.leolennards.ytdownloader.data.MediaFormat
 import com.leolennards.ytdownloader.data.QueueSummary
+import com.leolennards.ytdownloader.data.extractLinks
 import com.leolennards.ytdownloader.data.isPlaylistLink
 import com.leolennards.ytdownloader.data.toItem
 import com.leolennards.ytdownloader.ui.components.Tab
@@ -53,6 +56,7 @@ import com.leolennards.ytdownloader.ui.screens.LibraryScreen
 import com.leolennards.ytdownloader.ui.screens.PasteLinkScreen
 import com.leolennards.ytdownloader.ui.screens.PreviewScreen
 import com.leolennards.ytdownloader.ui.screens.QualityHeights
+import com.leolennards.ytdownloader.ui.screens.SettingsScreen
 import com.leolennards.ytdownloader.ui.theme.LocalMotionEnabled
 import com.leolennards.ytdownloader.ui.theme.Motion
 import com.leolennards.ytdownloader.ui.theme.YTDownloaderTheme
@@ -68,6 +72,7 @@ enum class Screen(val depth: Int) {
     Library(0),
     Preview(1),
     Downloading(2),
+    Settings(0),
 }
 
 // video quality used when adding straight from the paste screen
@@ -75,7 +80,12 @@ private const val QUICK_HEIGHT = 720
 
 // simple navigation with state, no navigation library needed
 @Composable
-fun YtApp() {
+fun YtApp(
+    sharedText: String? = null,
+    onSharedHandled: () -> Unit = {},
+    // closes the app screen, used to go back to the app a link was shared from
+    onFinish: () -> Unit = {},
+) {
     var screen by rememberSaveable { mutableStateOf(Screen.Paste) }
     var url by rememberSaveable { mutableStateOf("") }
     var formatIndex by rememberSaveable { mutableIntStateOf(1) } // 0 = mp3, 1 = mp4
@@ -86,6 +96,7 @@ fun YtApp() {
     val fetch by DownloadController.fetchState.collectAsState()
     val queue by DownloadController.queue.collectAsState()
     val history by DownloadController.history.collectAsState()
+    val settings by AppSettings.state.collectAsState()
     val items = history.map { it.toItem() }
 
     val active = queue.filter { it.isActive }
@@ -145,6 +156,54 @@ fun YtApp() {
 
     val format = if (formatIndex == 1) MediaFormat.MP4 else MediaFormat.MP3
 
+    // adds links to the queue (playlists get read first), returns the message to show
+    fun queueLinks(links: List<String>, mediaFormat: MediaFormat, height: Int): String {
+        val playlists = links.filter { isPlaylistLink(it) }
+        val singles = links - playlists.toSet()
+        if (singles.isNotEmpty()) {
+            DownloadController.enqueueMany(singles.map { it to null }, mediaFormat, height)
+        }
+        playlists.forEach { DownloadController.enqueuePlaylist(it, mediaFormat, height) }
+        return when {
+            playlists.isNotEmpty() -> "Reading playlist"
+            singles.size == 1 -> "Added to queue"
+            else -> "${singles.size} added to queue"
+        }
+    }
+
+    // a link shared from another app. with auto download on it goes straight to the queue,
+    // otherwise it goes in the paste box and you pick the format
+    LaunchedEffect(sharedText) {
+        if (sharedText != null) {
+            val links = extractLinks(sharedText)
+            if (links.isNotEmpty()) {
+                if (settings.autoDownloadShares) {
+                    val sharedFormat = if (settings.shareFormatIndex == 1) MediaFormat.MP4 else MediaFormat.MP3
+                    val height = settings.shareHeight
+                    val hasPlaylist = links.any { isPlaylistLink(it) }
+                    withNotificationPermission {
+                        val message = queueLinks(links, sharedFormat, height)
+                        haptics.confirm()
+                        if (hasPlaylist) {
+                            // reading a playlist takes a moment, so stay here and show the queue
+                            screen = Screen.Library
+                            showToast(message)
+                        } else {
+                            // downloads keep going in the background, so go back to the app you came from
+                            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                            onFinish()
+                        }
+                    }
+                } else {
+                    url = links.joinToString("\n")
+                    screen = Screen.Paste
+                    showToast(if (links.size == 1) "Link added" else "${links.size} links added")
+                }
+            }
+            onSharedHandled()
+        }
+    }
+
     BackHandler(enabled = screen != Screen.Paste) {
         screen = Screen.Paste
     }
@@ -191,21 +250,10 @@ fun YtApp() {
                         },
                         onQueue = { links ->
                             withNotificationPermission {
-                                val playlists = links.filter { isPlaylistLink(it) }
-                                val singles = links - playlists.toSet()
-                                if (singles.isNotEmpty()) {
-                                    DownloadController.enqueueMany(singles.map { it to null }, format, QUICK_HEIGHT)
-                                }
-                                playlists.forEach { DownloadController.enqueuePlaylist(it, format, QUICK_HEIGHT) }
+                                val message = queueLinks(links, format, QUICK_HEIGHT)
                                 url = ""
                                 haptics.confirm()
-                                showToast(
-                                    when {
-                                        playlists.isNotEmpty() -> "Reading playlist"
-                                        singles.size == 1 -> "Added to queue"
-                                        else -> "${singles.size} added to queue"
-                                    },
-                                )
+                                showToast(message)
                             }
                         },
                         onSeeAll = { screen = Screen.Library },
@@ -258,6 +306,11 @@ fun YtApp() {
                         onDismissJob = { DownloadController.dismiss(it) },
                         onCancelAll = { DownloadController.cancelAll() },
                     )
+
+                    Screen.Settings -> SettingsScreen(
+                        settings = settings,
+                        onChange = { new -> AppSettings.update { new } },
+                    )
                 }
             }
 
@@ -274,14 +327,18 @@ fun YtApp() {
                     .padding(16.dp),
             )
         }
-        if (screen == Screen.Paste || screen == Screen.Library) {
+        if (screen == Screen.Paste || screen == Screen.Library || screen == Screen.Settings) {
             YtBottomBar(
-                selected = if (screen == Screen.Library) Tab.Library else Tab.Download,
+                selected = when (screen) {
+                    Screen.Library -> Tab.Library
+                    Screen.Settings -> Tab.Settings
+                    else -> Tab.Download
+                },
                 onSelect = { tab ->
                     when (tab) {
                         Tab.Download -> screen = Screen.Paste
                         Tab.Library -> screen = Screen.Library
-                        Tab.Settings -> Unit // no settings screen yet
+                        Tab.Settings -> screen = Screen.Settings
                     }
                 },
             )

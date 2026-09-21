@@ -14,6 +14,7 @@ data class DownloadItem(
     val format: MediaFormat,
     val meta: String,
     val uri: String? = null,
+    val artist: String? = null,
 )
 
 // a finished download, saved so the library is still there after restarting
@@ -24,6 +25,7 @@ data class HistoryEntry(
     val sizeBytes: Long,
     val savedAtMs: Long,
     val uri: String,
+    val artist: String? = null,
 )
 
 fun HistoryEntry.toItem() = DownloadItem(
@@ -32,6 +34,7 @@ fun HistoryEntry.toItem() = DownloadItem(
     meta = listOfNotNull(format.label, qualityLabel, formatSize(sizeBytes), relativeDay(savedAtMs))
         .joinToString(" · "),
     uri = uri,
+    artist = artist,
 )
 
 class VideoMeta(
@@ -78,6 +81,8 @@ data class QueueJob(
     val track: Int? = null,
     // true while it waits for wifi
     val waitingForWifi: Boolean = false,
+    // channel or artist name
+    val artist: String? = null,
 ) {
     val quality: String? get() = if (format == MediaFormat.MP4) "${height}p" else null
     val isActive: Boolean get() = status == JobStatus.Queued || status == JobStatus.Running

@@ -67,7 +67,7 @@ fun LibraryScreen(
         else -> null
     }
     val filtered = items.filter {
-        (filter == null || it.format == filter) && it.title.contains(query.trim(), ignoreCase = true)
+        (filter == null || it.format == filter) && (it.title + " " + it.artist.orEmpty()).contains(query.trim(), ignoreCase = true)
     }
     // done ones show in the saved list below, so only running or failed ones here
     val visibleJobs = jobs.filter { it.status != JobStatus.Done && (filter == null || it.format == filter) }

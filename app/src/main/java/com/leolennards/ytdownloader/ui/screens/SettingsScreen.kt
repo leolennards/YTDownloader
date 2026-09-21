@@ -30,6 +30,7 @@ import com.leolennards.ytdownloader.data.SettingsState
 import com.leolennards.ytdownloader.ui.components.ChoicePill
 import com.leolennards.ytdownloader.ui.components.OutlinePillButton
 import com.leolennards.ytdownloader.ui.components.ScreenHeader
+import com.leolennards.ytdownloader.ui.components.SegmentOption
 import com.leolennards.ytdownloader.ui.components.SegmentedControl
 import com.leolennards.ytdownloader.ui.components.YtCard
 import com.leolennards.ytdownloader.ui.theme.YtDimens
@@ -93,6 +94,27 @@ fun SettingsScreen(
             subtitle = "Choose how the app behaves.",
             modifier = Modifier.staggeredEntrance(0, "settings-0"),
         )
+
+        // ---- light or dark ----
+        YtCard(Modifier.fillMaxWidth().staggeredEntrance(1, "settings-theme")) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text(
+                    "Appearance",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                SegmentedControl(
+                    options = listOf(SegmentOption("System"), SegmentOption("Light"), SegmentOption("Dark")),
+                    selectedIndex = settings.themeMode,
+                    onSelect = { onChange(settings.copy(themeMode = it)) },
+                )
+                Text(
+                    "System follows your phone's setting.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
 
         // ---- defaults for new downloads ----
         YtCard(Modifier.fillMaxWidth().staggeredEntrance(1, "settings-1")) {

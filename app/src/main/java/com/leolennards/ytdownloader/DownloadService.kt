@@ -107,16 +107,18 @@ class DownloadService : Service() {
             active.size == 1 -> {
                 val job = active.first()
                 builder.setContentTitle(if (job.title == job.url) "Preparing download" else job.title)
+                // artist goes in front of the status
+                val by = job.artist?.let { "$it · " }.orEmpty()
                 when {
                     job.status == JobStatus.Queued || job.step == JobStep.Preparing ->
-                        builder.setContentText("Getting ready").setProgress(0, 0, true)
+                        builder.setContentText("${by}Getting ready").setProgress(0, 0, true)
                     job.step == JobStep.Downloading -> {
                         val percent = (job.progress * 100).toInt()
-                        builder.setContentText("Downloading · $percent%").setProgress(100, percent, false)
+                        builder.setContentText("${by}Downloading · $percent%").setProgress(100, percent, false)
                     }
                     job.step == JobStep.Converting ->
-                        builder.setContentText("Converting").setProgress(0, 0, true)
-                    else -> builder.setContentText("Saving to your phone").setProgress(0, 0, true)
+                        builder.setContentText("${by}Converting").setProgress(0, 0, true)
+                    else -> builder.setContentText("${by}Saving to your phone").setProgress(0, 0, true)
                 }
             }
             else -> {
@@ -143,7 +145,7 @@ class DownloadService : Service() {
         if (done.isEmpty() && failed.isEmpty()) return
 
         val (title, text) = when {
-            done.size == 1 && failed.isEmpty() -> "Download saved" to done.first().title
+            done.size == 1 && failed.isEmpty() -> "Download saved" to listOfNotNull(done.first().title, done.first().artist).joinToString(" · ")
             done.isEmpty() && failed.size == 1 -> "Download failed" to (failed.first().error ?: failed.first().title)
             failed.isEmpty() -> "${done.size} downloads saved" to "They are in your library."
             else -> "${done.size} saved, ${failed.size} failed" to "Open the app to see what went wrong."

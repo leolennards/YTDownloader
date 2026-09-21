@@ -46,6 +46,8 @@ import java.util.concurrent.atomic.AtomicLong
 // downloads go in a queue and a few run at once (set in the settings)
 object DownloadController {
     private const val TAG = "DownloadController"
+    // youtube clients to try when a download gets a 403
+    private val RETRY_CLIENTS = listOf("android_vr", "tv", "web_safari", "mweb")
     private const val QUICK_FRAGMENTS = "2"
     private const val MAX_PLAYLIST = 200
     // things like (Audio) or [Official Music Video] in a title, for yt-dlp (python regex)
@@ -405,10 +407,18 @@ object DownloadController {
             val engine = _init.first { it !is InitState.Initializing }
             if (engine is InitState.Failed) error(engine.message)
 
-            val rawTitle = knownTitle ?: (YoutubeDL.getInstance().getInfo(singleVideo(url)).title ?: "Untitled")
+            // for album tracks the title is known already, so the lookup is only for the artist and can fail quietly
+            val info = if (knownTitle != null) {
+                runCatching { YoutubeDL.getInstance().getInfo(singleVideo(url)) }.getOrNull()
+            } else {
+                YoutubeDL.getInstance().getInfo(singleVideo(url))
+            }
+            val rawTitle = knownTitle ?: (info?.title ?: "Untitled")
+            val artist = job.artist ?: info?.uploader?.removeSuffix(" - Topic")?.trim()
+                ?.takeIf { it.isNotBlank() && it != "NA" }
             // for music, drop the "Artist - " at the start and stuff like (Audio), the artist is already in the tags
             val title = if (format == MediaFormat.MP3) cleanMusicTitle(rawTitle) else rawTitle
-            update(id) { it.copy(title = title, step = JobStep.Downloading) }
+            update(id) { it.copy(title = title, artist = artist, step = JobStep.Downloading) }
 
             val request = YoutubeDLRequest(url)
             request.addOption("--no-playlist")
@@ -449,6 +459,13 @@ object DownloadController {
                     val safe = album.replace(Regex("[%()|&:\\\\]"), " ").trim()
                     if (safe.isNotBlank()) {
                         request.addOption("--parse-metadata", "%(id&$safe|$safe)s:%(meta_album)s")
+                    }
+                }
+                // no album given, so tag it as a single (title - Single), keeps the real album if youtube has one
+                if (job.album == null) {
+                    val safeTitle = title.replace(Regex("[%()|&:\\\\]"), " ").trim()
+                    if (safeTitle.isNotBlank()) {
+                        request.addOption("--parse-metadata", "%(album|$safeTitle - Single)s:%(meta_album)s")
                     }
                 }
             } else {
@@ -495,12 +512,16 @@ object DownloadController {
                         it.contains("HTTP", ignoreCase = true) || it.contains("timed out", ignoreCase = true) ||
                             it.contains("connection", ignoreCase = true)
                     }
-                    if (id in cancelled || attempt >= 4 || !transient) throw e
+                    if (id in cancelled || attempt >= 5 || !transient) throw e
                     Log.w(TAG, "download attempt $attempt failed, retrying", e)
                     update(id) { it.copy(progress = 0f, step = JobStep.Preparing) }
                     // wait longer each time, and go slower (one connection) since too many at once can get blocked
                     delay(3000L * attempt)
                     request.addOption("--concurrent-fragments", "1")
+                    // a 403 is often tied to one youtube client, so try a different one each retry
+                    RETRY_CLIENTS.getOrNull(attempt - 1)?.let {
+                        request.addOption("--extractor-args", "youtube:player_client=$it")
+                    }
                     update(id) { it.copy(step = JobStep.Downloading) }
                 }
             }
@@ -514,7 +535,7 @@ object DownloadController {
             val uri = saveToMediaStore(output, title, format, job.folder)
 
             val quality = if (format == MediaFormat.MP4) "${height}p" else null
-            val entry = HistoryEntry(title, format, quality, size, System.currentTimeMillis(), uri.toString())
+            val entry = HistoryEntry(title, format, quality, size, System.currentTimeMillis(), uri.toString(), artist)
             val updated = listOf(entry) + _history.value
             _history.value = updated
             HistoryStore.save(app, updated)

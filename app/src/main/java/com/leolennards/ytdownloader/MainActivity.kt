@@ -1,10 +1,16 @@
 package com.leolennards.ytdownloader
 
 import android.content.Intent
+import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import com.leolennards.ytdownloader.data.AppSettings
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -21,7 +27,22 @@ class MainActivity : ComponentActivity() {
         // only read the intent on a fresh start, not after rotating the screen
         if (savedInstanceState == null) readShare(intent)
         setContent {
-            YTDownloaderTheme {
+            val settings by AppSettings.state.collectAsState()
+            val dark = when (settings.themeMode) {
+                1 -> false
+                2 -> true
+                else -> isSystemInDarkTheme()
+            }
+            // status bar and nav bar icons follow the chosen theme
+            LaunchedEffect(dark) {
+                val bar = if (dark) {
+                    SystemBarStyle.dark(Color.TRANSPARENT)
+                } else {
+                    SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+                }
+                enableEdgeToEdge(statusBarStyle = bar, navigationBarStyle = bar)
+            }
+            YTDownloaderTheme(darkTheme = dark) {
                 YtApp(
                     sharedText = sharedText,
                     onSharedHandled = { sharedText = null },

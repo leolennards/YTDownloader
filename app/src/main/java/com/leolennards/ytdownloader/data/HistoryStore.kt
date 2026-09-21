@@ -23,6 +23,7 @@ object HistoryStore {
                     sizeBytes = o.getLong("size"),
                     savedAtMs = o.getLong("savedAt"),
                     uri = o.getString("uri"),
+                    artist = if (o.has("artist") && !o.isNull("artist")) o.getString("artist") else null,
                 )
             }
         } catch (e: Exception) {
@@ -40,7 +41,8 @@ object HistoryStore {
                     .put("quality", e.qualityLabel ?: JSONObject.NULL)
                     .put("size", e.sizeBytes)
                     .put("savedAt", e.savedAtMs)
-                    .put("uri", e.uri),
+                    .put("uri", e.uri)
+                    .put("artist", e.artist ?: JSONObject.NULL),
             )
         }
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, array.toString()).apply()

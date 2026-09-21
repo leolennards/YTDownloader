@@ -24,6 +24,8 @@ data class SettingsState(
     val maxParallel: Int = 2,
     // only start downloads on wifi
     val wifiOnly: Boolean = false,
+    // 0 = follow the phone, 1 = light, 2 = dark
+    val themeMode: Int = 0,
 )
 
 // keeps the settings in SharedPreferences
@@ -47,6 +49,7 @@ object AppSettings {
             folderName = prefs.getString("folderName", defaults.folderName) ?: defaults.folderName,
             maxParallel = prefs.getInt("maxParallel", defaults.maxParallel).coerceIn(1, 3),
             wifiOnly = prefs.getBoolean("wifiOnly", defaults.wifiOnly),
+            themeMode = prefs.getInt("themeMode", defaults.themeMode).coerceIn(0, 2),
         )
     }
 
@@ -62,6 +65,7 @@ object AppSettings {
             .putString("folderName", s.folderName)
             .putInt("maxParallel", s.maxParallel)
             .putBoolean("wifiOnly", s.wifiOnly)
+            .putInt("themeMode", s.themeMode)
             .apply()
     }
 }

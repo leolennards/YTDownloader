@@ -389,6 +389,15 @@ fun DownloadRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                if (!item.artist.isNullOrBlank()) {
+                    Text(
+                        item.artist,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = YtTheme.colors.goldText,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 Text(
                     item.meta,
                     style = MaterialTheme.typography.bodySmall,
@@ -445,7 +454,7 @@ fun QueueJobCard(
         job.step == JobStep.Downloading -> "Downloading · ${(job.progress * 100).toInt()}%"
         job.step == JobStep.Converting -> "Converting"
         else -> "Saving to your phone"
-    }
+    }.let { text -> if (!failed && !job.artist.isNullOrBlank()) "${job.artist} · $text" else text }
     YtCard(modifier = modifier.fillMaxWidth().animateContentSize(motionSpring()), borderColor = border) {
         Column(
             modifier = Modifier.padding(start = 10.dp, top = 10.dp, end = 6.dp, bottom = if (failed) 10.dp else 14.dp),

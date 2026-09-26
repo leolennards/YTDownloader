@@ -1,5 +1,7 @@
 package com.leolennards.ytdownloader.ui.screens
 
+import android.media.AudioAttributes
+import android.media.MediaPlayer
 import android.net.Uri
 import android.widget.VideoView
 import androidx.compose.foundation.background
@@ -31,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -45,32 +48,24 @@ import com.leolennards.ytdownloader.ui.theme.YtTheme
 import com.leolennards.ytdownloader.ui.theme.ytClickable
 import kotlinx.coroutines.delay
 
-// plays a saved file, video view handles both mp3 and mp4
+// simple play/pause/seek state shared by both the video and the audio player below
+private class PlayerState {
+    var playing by mutableStateOf(false)
+    var position by mutableIntStateOf(0)
+    var duration by mutableIntStateOf(0)
+    var dragging by mutableStateOf(false)
+    var dragValue by mutableFloatStateOf(0f)
+    var seekTo: ((Int) -> Unit)? = null
+    var toggle: (() -> Unit)? = null
+}
+
+// plays a saved file. video uses VideoView, audio uses MediaPlayer directly since
+// VideoView can be unreliable with audio-only files on some phones ("Can't play this video")
 @Composable
 fun PlayerScreen(item: DownloadItem, onBack: () -> Unit, modifier: Modifier = Modifier) {
     val isVideo = item.format == MediaFormat.MP4
-    var view by remember { mutableStateOf<VideoView?>(null) }
-    var playing by remember { mutableStateOf(false) }
-    var position by remember { mutableIntStateOf(0) }
-    var duration by remember { mutableIntStateOf(0) }
-    var dragging by remember { mutableStateOf(false) }
-    var dragValue by remember { mutableFloatStateOf(0f) }
-
-    // keeps the slider moving
-    LaunchedEffect(view) {
-        val v = view ?: return@LaunchedEffect
-        while (true) {
-            if (!dragging) {
-                position = v.currentPosition
-                playing = v.isPlaying
-            }
-            delay(250)
-        }
-    }
-    // stop when leaving the screen
-    DisposableEffect(Unit) {
-        onDispose { view?.stopPlayback() }
-    }
+    val uri = item.uri ?: run { onBack(); return }
+    val state = remember { PlayerState() }
 
     Column(
         modifier = modifier
@@ -91,34 +86,10 @@ fun PlayerScreen(item: DownloadItem, onBack: () -> Unit, modifier: Modifier = Mo
             )
         }
 
-        // the video, or just a small hidden view for audio
-        AndroidView(
-            factory = { ctx ->
-                VideoView(ctx).apply {
-                    setVideoURI(Uri.parse(item.uri))
-                    setOnPreparedListener {
-                        duration = it.duration
-                        start()
-                        playing = true
-                    }
-                    setOnCompletionListener {
-                        playing = false
-                        position = duration
-                    }
-                    view = this
-                }
-            },
-            modifier = if (isVideo) {
-                Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(16f / 9f)
-                    .clip(RoundedCornerShape(YtDimens.CardRadius))
-                    .background(Color.Black)
-            } else {
-                Modifier.size(1.dp)
-            },
-        )
-        if (!isVideo) {
+        if (isVideo) {
+            VideoPlayer(uri, state)
+        } else {
+            AudioPlayer(uri, state)
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -132,19 +103,19 @@ fun PlayerScreen(item: DownloadItem, onBack: () -> Unit, modifier: Modifier = Mo
         }
 
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            val shown = if (dragging) dragValue else position.toFloat()
+            val shown = if (state.dragging) state.dragValue else state.position.toFloat()
             Slider(
-                value = shown.coerceIn(0f, duration.coerceAtLeast(1).toFloat()),
+                value = shown.coerceIn(0f, state.duration.coerceAtLeast(1).toFloat()),
                 onValueChange = {
-                    dragging = true
-                    dragValue = it
+                    state.dragging = true
+                    state.dragValue = it
                 },
                 onValueChangeFinished = {
-                    view?.seekTo(dragValue.toInt())
-                    position = dragValue.toInt()
-                    dragging = false
+                    state.seekTo?.invoke(state.dragValue.toInt())
+                    state.position = state.dragValue.toInt()
+                    state.dragging = false
                 },
-                valueRange = 0f..duration.coerceAtLeast(1).toFloat(),
+                valueRange = 0f..state.duration.coerceAtLeast(1).toFloat(),
                 colors = SliderDefaults.colors(
                     thumbColor = MaterialTheme.colorScheme.primary,
                     activeTrackColor = MaterialTheme.colorScheme.primary,
@@ -158,7 +129,7 @@ fun PlayerScreen(item: DownloadItem, onBack: () -> Unit, modifier: Modifier = Mo
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    formatDuration((duration / 1000).toLong()),
+                    formatDuration((state.duration / 1000).toLong()),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -171,27 +142,146 @@ fun PlayerScreen(item: DownloadItem, onBack: () -> Unit, modifier: Modifier = Mo
                     .size(72.dp)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.primary)
-                    .ytClickable {
-                        val v = view ?: return@ytClickable
-                        if (v.isPlaying) {
-                            v.pause()
-                            playing = false
-                        } else {
-                            // start again from the top if it finished
-                            if (duration > 0 && v.currentPosition >= duration - 300) v.seekTo(0)
-                            v.start()
-                            playing = true
-                        }
-                    },
+                    .ytClickable { state.toggle?.invoke() },
                 contentAlignment = Alignment.Center,
             ) {
                 YtIcon(
-                    if (playing) R.drawable.ic_pause else R.drawable.ic_play,
+                    if (state.playing) R.drawable.ic_pause else R.drawable.ic_play,
                     tint = MaterialTheme.colorScheme.onPrimary,
                     size = 30.dp,
-                    contentDescription = if (playing) "Pause" else "Play",
+                    contentDescription = if (state.playing) "Pause" else "Play",
                 )
             }
+        }
+    }
+}
+
+// plays an mp4 with android's built in video view
+@Composable
+private fun VideoPlayer(uri: String, state: PlayerState) {
+    var view by remember { mutableStateOf<VideoView?>(null) }
+
+    LaunchedEffect(view) {
+        val v = view ?: return@LaunchedEffect
+        while (true) {
+            if (!state.dragging) {
+                state.position = v.currentPosition
+                state.playing = v.isPlaying
+            }
+            delay(250)
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose { view?.stopPlayback() }
+    }
+
+    AndroidView(
+        factory = { ctx ->
+            VideoView(ctx).apply {
+                setVideoURI(Uri.parse(uri))
+                setOnPreparedListener {
+                    state.duration = it.duration
+                    start()
+                    state.playing = true
+                }
+                setOnCompletionListener {
+                    state.playing = false
+                    state.position = state.duration
+                }
+                state.seekTo = { pos -> seekTo(pos) }
+                state.toggle = {
+                    if (isPlaying) {
+                        pause()
+                        state.playing = false
+                    } else {
+                        if (state.duration > 0 && currentPosition >= state.duration - 300) seekTo(0)
+                        start()
+                        state.playing = true
+                    }
+                }
+                view = this
+            }
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(16f / 9f)
+            .clip(RoundedCornerShape(YtDimens.CardRadius))
+            .background(Color.Black),
+    )
+}
+
+// plays an mp3 with MediaPlayer directly, no view needed
+@Composable
+private fun AudioPlayer(uri: String, state: PlayerState) {
+    val context = LocalContext.current
+    var player by remember { mutableStateOf<MediaPlayer?>(null) }
+
+    DisposableEffect(uri) {
+        val mp = MediaPlayer()
+        // set once the file is actually ready to play, so we dont call start/pause/seek too early
+        var ready = false
+        mp.setOnErrorListener { _, _, _ ->
+            // something went wrong playing this file. dont let it crash the app, just stop here
+            ready = false
+            state.playing = false
+            true
+        }
+        mp.setOnPreparedListener {
+            ready = true
+            state.duration = it.duration
+            it.start()
+            state.playing = true
+        }
+        mp.setOnCompletionListener {
+            state.playing = false
+            state.position = state.duration
+        }
+        // setDataSource and prepareAsync can both throw if the file is missing or unreadable
+        runCatching {
+            mp.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .build(),
+            )
+            mp.setDataSource(context, Uri.parse(uri))
+            mp.prepareAsync()
+        }
+        state.seekTo = { pos -> if (ready) runCatching { mp.seekTo(pos) } }
+        state.toggle = {
+            if (ready) {
+                runCatching {
+                    if (mp.isPlaying) {
+                        mp.pause()
+                        state.playing = false
+                    } else {
+                        if (state.duration > 0 && mp.currentPosition >= state.duration - 300) mp.seekTo(0)
+                        mp.start()
+                        state.playing = true
+                    }
+                }
+            }
+        }
+        player = mp
+        onDispose {
+            mp.setOnPreparedListener(null)
+            mp.setOnCompletionListener(null)
+            mp.setOnErrorListener(null)
+            runCatching { if (ready) mp.stop() }
+            runCatching { mp.release() }
+        }
+    }
+
+    LaunchedEffect(player) {
+        val mp = player ?: return@LaunchedEffect
+        while (true) {
+            if (!state.dragging) {
+                runCatching {
+                    state.position = mp.currentPosition
+                    state.playing = mp.isPlaying
+                }
+            }
+            delay(250)
         }
     }
 }

@@ -47,7 +47,8 @@ import java.util.concurrent.atomic.AtomicLong
 object DownloadController {
     private const val TAG = "DownloadController"
     // youtube clients to try when a download gets a 403
-    private val RETRY_CLIENTS = listOf("android_vr", "tv", "web_safari", "mweb")
+    // android_vr often has no audio-only formats, so it goes last, only as a last resort
+    private val RETRY_CLIENTS = listOf("tv", "web_safari", "mweb", "android_vr")
     private const val QUICK_FRAGMENTS = "2"
     private const val MAX_PLAYLIST = 200
     // things like (Audio) or [Official Music Video] in a title, for yt-dlp (python regex)
@@ -438,12 +439,21 @@ object DownloadController {
                 // tags and cover art so it looks right in a music player
                 request.addOption("--embed-metadata")
                 request.addOption("--embed-thumbnail")
-                // youtube thumbnails are often wide with black bars, so crop the cover to a square in the middle.
-                // png because yt-dlp only converts (and so only crops) when the format changes
+                // tag it with youtube's category (music, gaming, etc), music as a fallback
+                request.addOption("--parse-metadata", "%(categories.0|Music)s:%(meta_genre)s")
+                // youtube thumbnails are often not square, and some already have black bars baked in
+                // (like a vevo video thumbnail), so plain padding just adds more black on top of that.
+                // instead, fill the square with a blurred, stretched copy of the picture, then lay the
+                // whole uncropped picture on top of it, centered. nothing gets cut off, no black bars.
+                // png because yt-dlp only converts (and so only runs this filter) when the format changes
                 request.addOption("--convert-thumbnails", "png")
                 request.addOption(
                     "--postprocessor-args",
-                    "ThumbnailsConvertor+FFmpeg_o:-c:v png -vf crop=\"'min(iw,ih)':'min(iw,ih)'\",scale=600:600",
+                    "ThumbnailsConvertor+FFmpeg_o:-c:v png -vf " +
+                        "split[bg][fg];" +
+                        "[bg]scale=600:600,boxblur=20:5[bg];" +
+                        "[fg]scale=600:600:force_original_aspect_ratio=decrease[fg];" +
+                        "[bg][fg]overlay=(W-w)/2:(H-h)/2",
                 )
                 // same clean up for the title tag, and use the "Artist - " part as the artist tag when there is one
                 request.addCommands(
@@ -510,7 +520,11 @@ object DownloadController {
                     attempt++
                     val transient = e.message.orEmpty().let {
                         it.contains("HTTP", ignoreCase = true) || it.contains("timed out", ignoreCase = true) ||
-                            it.contains("connection", ignoreCase = true)
+                            it.contains("connection", ignoreCase = true) ||
+                            // youtube throwing us off, usually fixed by trying a different client (see RETRY_CLIENTS)
+                            it.contains("reload", ignoreCase = true) || it.contains("Sign in", ignoreCase = true) ||
+                            // some clients dont have every format, worth trying the next one
+                            it.contains("format is not available", ignoreCase = true)
                     }
                     if (id in cancelled || attempt >= 5 || !transient) throw e
                     Log.w(TAG, "download attempt $attempt failed, retrying", e)

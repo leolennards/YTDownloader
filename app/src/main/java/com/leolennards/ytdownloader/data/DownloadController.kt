@@ -440,7 +440,9 @@ object DownloadController {
                 request.addOption("--embed-metadata")
                 request.addOption("--embed-thumbnail")
                 // tag it with youtube's category (music, gaming, etc), music as a fallback
-                request.addOption("--parse-metadata", "%(categories.0|Music)s:%(meta_genre)s")
+                // prefer the real genre youtube sometimes has for official music videos,
+                // fall back to the broad category (usually just "Music"), then "Music" itself
+                request.addOption("--parse-metadata", "%(genre,categories.0|Music)s:%(meta_genre)s")
                 // youtube thumbnails are often not square, and some already have black bars baked in
                 // (like a vevo video thumbnail), so plain padding just adds more black on top of that.
                 // instead, fill the square with a blurred, stretched copy of the picture, then lay the

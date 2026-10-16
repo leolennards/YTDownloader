@@ -26,3 +26,10 @@ fun isPlaylistLink(url: String): Boolean {
     if (uri.host == "youtu.be") return path.startsWith("/playlist")
     return (hasList && !hasVideo) || path.startsWith("/playlist") || path.contains("/sets/") || path.contains("/album/")
 }
+
+// the 11 character video id from a youtube link, null for other sites
+fun youtubeId(url: String): String? {
+    val match = Regex("""(?:youtube\.com/(?:watch\?(?:.*&)?v=|shorts/|embed/|live/)|youtu\.be/)([A-Za-z0-9_-]{11})""")
+        .find(url)
+    return match?.groupValues?.get(1)
+}

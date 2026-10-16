@@ -83,6 +83,8 @@ data class QueueJob(
     val waitingForWifi: Boolean = false,
     // channel or artist name
     val artist: String? = null,
+    // picture shown while it downloads
+    val thumbnailUrl: String? = null,
 ) {
     val quality: String? get() = if (format == MediaFormat.MP4) "${height}p" else null
     val isActive: Boolean get() = status == JobStatus.Queued || status == JobStatus.Running

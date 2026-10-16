@@ -381,6 +381,26 @@ object DownloadController {
         _queue.update { list -> list.filterNot { it.id == id } }
     }
 
+    // deletes a saved file and takes it out of the library. returns false when only the library
+    // entry could be removed (android can refuse to delete files after the app was reinstalled)
+    fun deleteSaved(uri: String): Boolean {
+        val deleted = try {
+            val parsed = Uri.parse(uri)
+            if (parsed.scheme == "file") {
+                File(parsed.path.orEmpty()).delete()
+            } else {
+                app.contentResolver.delete(parsed, null, null) > 0
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "could not delete $uri", e)
+            false
+        }
+        val updated = _history.value.filterNot { it.uri == uri }
+        _history.value = updated
+        HistoryStore.save(app, updated)
+        return deleted
+    }
+
     // finished jobs from the latest batch, used for the all done notification
     fun latestBatchResults(): List<QueueJob> =
         _queue.value.filter { it.batch == batchCounter && (it.status == JobStatus.Done || it.status == JobStatus.Failed) }
@@ -419,7 +439,7 @@ object DownloadController {
                 ?.takeIf { it.isNotBlank() && it != "NA" }
             // for music, drop the "Artist - " at the start and stuff like (Audio), the artist is already in the tags
             val title = if (format == MediaFormat.MP3) cleanMusicTitle(rawTitle) else rawTitle
-            update(id) { it.copy(title = title, artist = artist, step = JobStep.Downloading) }
+            update(id) { it.copy(title = title, artist = artist, step = JobStep.Downloading, thumbnailUrl = it.thumbnailUrl ?: info?.thumbnail) }
 
             val request = withCookies(YoutubeDLRequest(url))
             request.addOption("--no-playlist")
@@ -438,25 +458,13 @@ object DownloadController {
                 request.addOption("--audio-quality", "0")
                 // tags and cover art so it looks right in a music player
                 request.addOption("--embed-metadata")
-                request.addOption("--embed-thumbnail")
+                // the cover is made and embedded by the app after the download (see CoverArt),
+                // yt-dlp only saves the best thumbnail it can find next to the file
+                request.addOption("--write-thumbnail")
                 // tag it with youtube's category (music, gaming, etc), music as a fallback
                 // prefer the real genre youtube sometimes has for official music videos,
                 // fall back to the broad category (usually just "Music"), then "Music" itself
                 request.addOption("--parse-metadata", "%(genre,categories.0|Music)s:%(meta_genre)s")
-                // youtube thumbnails are often not square, and some already have black bars baked in
-                // (like a vevo video thumbnail), so plain padding just adds more black on top of that.
-                // instead, fill the square with a blurred, stretched copy of the picture, then lay the
-                // whole uncropped picture on top of it, centered. nothing gets cut off, no black bars.
-                // png because yt-dlp only converts (and so only runs this filter) when the format changes
-                request.addOption("--convert-thumbnails", "png")
-                request.addOption(
-                    "--postprocessor-args",
-                    "ThumbnailsConvertor+FFmpeg_o:-c:v png -vf " +
-                        "split[bg][fg];" +
-                        "[bg]scale=600:600,boxblur=20:5[bg];" +
-                        "[fg]scale=600:600:force_original_aspect_ratio=decrease[fg];" +
-                        "[bg][fg]overlay=(W-w)/2:(H-h)/2",
-                )
                 // same clean up for the title tag, and use the "Artist - " part as the artist tag when there is one
                 request.addCommands(
                     listOf(
@@ -542,11 +550,20 @@ object DownloadController {
                 }
             }
 
-            val output = dir.listFiles { f ->
+            val wantedExt = if (format == MediaFormat.MP3) "mp3" else "mp4"
+            val files = dir.listFiles { f ->
                 f.name.startsWith("$id.") && !f.name.endsWith(".part") && !f.name.endsWith(".ytdl")
-            }?.maxByOrNull { it.length() } ?: error("The download finished but no file was produced.")
+            }.orEmpty()
+            val output = files.filter { it.extension == wantedExt }.maxByOrNull { it.length() }
+                ?: files.filterNot { it.extension in ThumbnailExts }.maxByOrNull { it.length() }
+                ?: error("The download finished but no file was produced.")
 
             update(id) { it.copy(progress = 0.99f, step = JobStep.Saving) }
+            if (format == MediaFormat.MP3) {
+                val thumb = files.firstOrNull { it.extension in ThumbnailExts }
+                val videoId = (if (info?.extractorKey == "Youtube") info.id else null) ?: youtubeId(url)
+                addCover(output, thumb, videoId, info?.thumbnail)
+            }
             val size = output.length()
             val uri = saveToMediaStore(output, title, format, job.folder)
 
@@ -567,6 +584,19 @@ object DownloadController {
             dir.listFiles { f -> f.name.startsWith("$id.") }?.forEach { it.delete() }
             handles.remove(id)
             cancelled.remove(id)
+        }
+    }
+
+    private val ThumbnailExts = setOf("jpg", "jpeg", "png", "webp")
+
+    // makes a clean square cover and puts it in the mp3. a missing cover is not worth failing the download
+    private fun addCover(mp3: File, thumbnail: File?, videoId: String?, thumbnailUrl: String?) {
+        try {
+            val jpeg = CoverArt.build(thumbnail, videoId, thumbnailUrl) ?: return
+            val tagged = Id3Cover.embed(mp3.readBytes(), jpeg) ?: return
+            mp3.writeBytes(tagged)
+        } catch (e: Exception) {
+            Log.w(TAG, "could not add the cover art", e)
         }
     }
 

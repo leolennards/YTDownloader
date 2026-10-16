@@ -85,6 +85,8 @@ data class QueueJob(
     val artist: String? = null,
     // picture shown while it downloads
     val thumbnailUrl: String? = null,
+    // true after the first try failed and it is trying another way
+    val retrying: Boolean = false,
 ) {
     val quality: String? get() = if (format == MediaFormat.MP4) "${height}p" else null
     val isActive: Boolean get() = status == JobStatus.Queued || status == JobStatus.Running

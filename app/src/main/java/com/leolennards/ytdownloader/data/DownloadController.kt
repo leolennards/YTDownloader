@@ -36,6 +36,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
@@ -46,9 +48,12 @@ import java.util.concurrent.atomic.AtomicLong
 // downloads go in a queue and a few run at once (set in the settings)
 object DownloadController {
     private const val TAG = "DownloadController"
-    // youtube clients to try when a download gets a 403
-    // android_vr often has no audio-only formats, so it goes last, only as a last resort
-    private val RETRY_CLIENTS = listOf("tv", "web_safari", "mweb", "android_vr")
+    // youtube clients to try when the default ones get a 403, tested in october 2026.
+    // web_embedded gives the same formats as the default, web_safari uses HLS which youtube
+    // rarely blocks, tv_simply and mweb only give 360p but almost always work.
+    // android_vr and tv are left out on purpose, youtube answers them with 403 right now
+    private val RETRY_CLIENTS_AUDIO = listOf("web_embedded", "web_safari", "tv_simply", "mweb")
+    private val RETRY_CLIENTS_VIDEO = listOf("web_safari", "web_embedded", "tv_simply", "mweb")
     private const val QUICK_FRAGMENTS = "2"
     private const val MAX_PLAYLIST = 200
     // things like (Audio) or [Official Music Video] in a title, for yt-dlp (python regex)
@@ -80,6 +85,12 @@ object DownloadController {
     val notices: SharedFlow<String> = _notices.asSharedFlow()
 
     private var fetchJob: Job? = null
+
+    // true once yt-dlp was updated (or found up to date) since the app started.
+    // an old yt-dlp is the most common reason for youtube 403s
+    @Volatile
+    private var engineFresh = false
+    private val updateLock = Mutex()
 
     // yt-dlp version and manual update state, shown in the settings screen
     private val _engineVersion = MutableStateFlow<String?>(null)
@@ -122,11 +133,25 @@ object DownloadController {
 
     // nightly is the newest, stable is the fallback. returns DONE or ALREADY_UP_TO_DATE
     private fun updateEngineBlocking(): String? {
-        return try {
+        val result = try {
             YoutubeDL.getInstance().updateYoutubeDL(app, YoutubeDL.UpdateChannel.NIGHTLY)?.name
         } catch (e: Exception) {
             Log.w(TAG, "nightly update failed, trying stable", e)
             YoutubeDL.getInstance().updateYoutubeDL(app, YoutubeDL.UpdateChannel.STABLE)?.name
+        }
+        if (result == "DONE" || result == "ALREADY_UP_TO_DATE") engineFresh = true
+        return result
+    }
+
+    // after a 403, update yt-dlp once if the startup update did not work. only when nothing
+    // else is downloading, since swapping yt-dlp under a running download could break it
+    private suspend fun refreshEngineAfterBlock(): Boolean {
+        if (engineFresh || running.value > 1) return false
+        return updateLock.withLock {
+            if (engineFresh) return@withLock false
+            runCatching { updateEngineBlocking() }.onFailure { Log.w(TAG, "update after 403 failed", it) }
+            refreshVersion()
+            engineFresh
         }
     }
 
@@ -223,7 +248,15 @@ object DownloadController {
                 return@launch
             }
             try {
-                val info = YoutubeDL.getInstance().getInfo(singleVideo(url))
+                val info = try {
+                    YoutubeDL.getInstance().getInfo(singleVideo(url))
+                } catch (e: Exception) {
+                    if (e is CancellationException || !isYoutube(url)) throw e
+                    // looking it up can be blocked too, web_embedded usually still answers
+                    YoutubeDL.getInstance().getInfo(
+                        singleVideo(url).apply { addOption("--extractor-args", "youtube:player_client=web_embedded") },
+                    )
+                }
                 val meta = VideoMeta(
                     title = info.title ?: "Untitled",
                     uploader = info.uploader ?: "",
@@ -306,7 +339,7 @@ object DownloadController {
                 return@launch
             }
             try {
-                val request = withCookies(YoutubeDLRequest(url))
+                val request = withCookies(YoutubeDLRequest(url), url)
                 request.addOption("--flat-playlist")
                 request.addOption("--playlist-end", MAX_PLAYLIST.toString())
                 request.addOption("--print", "%(url)s\t%(title)s\t%(playlist_title)s")
@@ -441,7 +474,7 @@ object DownloadController {
             val title = if (format == MediaFormat.MP3) cleanMusicTitle(rawTitle) else rawTitle
             update(id) { it.copy(title = title, artist = artist, step = JobStep.Downloading, thumbnailUrl = it.thumbnailUrl ?: info?.thumbnail) }
 
-            val request = withCookies(YoutubeDLRequest(url))
+            val request = withCookies(YoutubeDLRequest(url), url)
             request.addOption("--no-playlist")
             request.addOption("-o", File(dir, "$id.%(ext)s").absolutePath)
             // download a few fragments at once, much faster on youtube
@@ -501,8 +534,13 @@ object DownloadController {
             var streamIndex = 0
             var lastPercent = 0f
             // sometimes a download fails with an http error (like 403).
-            // trying again a bit later usually works so do it automatically
+            // trying again with a different youtube client usually works, so do it automatically
+            val retryClients = if (format == MediaFormat.MP3) RETRY_CLIENTS_AUDIO else RETRY_CLIENTS_VIDEO
             var attempt = 0
+            var clientIndex = 0
+            var firstError: Exception? = null
+            var triedUpdate = false
+            var triedCookies = false
             while (true) {
                 try {
                     streamIndex = 0
@@ -528,23 +566,46 @@ object DownloadController {
                     throw e
                 } catch (e: Exception) {
                     attempt++
-                    val transient = e.message.orEmpty().let {
-                        it.contains("HTTP", ignoreCase = true) || it.contains("timed out", ignoreCase = true) ||
-                            it.contains("connection", ignoreCase = true) ||
-                            // youtube throwing us off, usually fixed by trying a different client (see RETRY_CLIENTS)
-                            it.contains("reload", ignoreCase = true) || it.contains("Sign in", ignoreCase = true) ||
-                            // some clients dont have every format, worth trying the next one
-                            it.contains("format is not available", ignoreCase = true)
+                    if (firstError == null) firstError = e
+                    val message = e.message.orEmpty()
+                    val blocked = message.contains("403") || message.contains("Forbidden", ignoreCase = true)
+                    val needsLogin = message.contains("Sign in", ignoreCase = true) ||
+                        message.contains("age", ignoreCase = true) && message.contains("confirm", ignoreCase = true)
+                    val transient = blocked || needsLogin ||
+                        message.contains("HTTP", ignoreCase = true) || message.contains("timed out", ignoreCase = true) ||
+                        message.contains("connection", ignoreCase = true) ||
+                        message.contains("reload", ignoreCase = true) ||
+                        // some clients dont have every format, worth trying the next one
+                        message.contains("format is not available", ignoreCase = true) ||
+                        message.contains("missing a url", ignoreCase = true)
+                    val outOfIdeas = clientIndex >= retryClients.size && (triedUpdate || !blocked)
+                    if (id in cancelled || attempt >= 7 || !transient || outOfIdeas) {
+                        throw if (blocked) BlockedException(firstError ?: e) else e
                     }
-                    if (id in cancelled || attempt >= 5 || !transient) throw e
                     Log.w(TAG, "download attempt $attempt failed, retrying", e)
-                    update(id) { it.copy(progress = 0f, step = JobStep.Preparing) }
-                    // wait longer each time, and go slower (one connection) since too many at once can get blocked
-                    delay(3000L * attempt)
-                    request.addOption("--concurrent-fragments", "1")
-                    // a 403 is often tied to one youtube client, so try a different one each retry
-                    RETRY_CLIENTS.getOrNull(attempt - 1)?.let {
-                        request.addOption("--extractor-args", "youtube:player_client=$it")
+                    update(id) { it.copy(progress = 0f, step = JobStep.Preparing, retrying = true) }
+                    when {
+                        // the most common cause of youtube 403s is an old yt-dlp, so update it first
+                        blocked && !triedUpdate && attempt == 1 -> {
+                            triedUpdate = true
+                            if (!refreshEngineAfterBlock()) delay(2000L)
+                        }
+                        // youtube wants a login and the user added cookies, so use them this time
+                        needsLogin && !triedCookies && CookieStore.hasCookies.value -> {
+                            triedCookies = true
+                            request.addOption("--cookies", CookieStore.file().absolutePath)
+                        }
+                        else -> {
+                            // a 403 is usually tied to one youtube client, so try the next one
+                            delay(1500L * attempt)
+                            if (isYoutube(url) && clientIndex < retryClients.size) {
+                                request.addOption("--extractor-args", "youtube:player_client=${retryClients[clientIndex++]}")
+                            } else {
+                                clientIndex = retryClients.size
+                            }
+                            // one connection at a time looks less like a bot
+                            request.addOption("--concurrent-fragments", "1")
+                        }
                     }
                     update(id) { it.copy(step = JobStep.Downloading) }
                 }
@@ -600,13 +661,25 @@ object DownloadController {
         }
     }
 
-    private fun singleVideo(url: String) = withCookies(YoutubeDLRequest(url)).apply { addOption("--no-playlist") }
+    private fun singleVideo(url: String) = withCookies(YoutubeDLRequest(url), url).apply { addOption("--no-playlist") }
 
-    // adds the user's login cookies (from settings) for sites that need them, like instagram
-    private fun withCookies(request: YoutubeDLRequest): YoutubeDLRequest {
-        if (CookieStore.hasCookies.value) request.addOption("--cookies", CookieStore.file().absolutePath)
+    // adds the user's login cookies (from settings) for sites that need them, like instagram.
+    // not for youtube: with cookies yt-dlp can only use the youtube clients that accept them,
+    // and those get blocked more often. youtube only gets them when it asks for a login (see runJob)
+    private fun withCookies(request: YoutubeDLRequest, url: String): YoutubeDLRequest {
+        if (CookieStore.hasCookies.value && !isYoutube(url)) {
+            request.addOption("--cookies", CookieStore.file().absolutePath)
+        }
         return request
     }
+
+    private fun isYoutube(url: String): Boolean {
+        val host = runCatching { java.net.URI(url).host }.getOrNull()?.lowercase() ?: return false
+        return host == "youtu.be" || host.endsWith("youtube.com") || host.endsWith("youtube-nocookie.com")
+    }
+
+    // thrown when every way of downloading got a 403, so the ui can explain it properly
+    private class BlockedException(cause: Exception) : Exception(cause.message, cause)
 
     private fun saveToMediaStore(file: File, title: String, format: MediaFormat, folder: String?): Uri {
         val isAudio = format == MediaFormat.MP3
@@ -667,6 +740,10 @@ object DownloadController {
         name.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().take(120).ifBlank { "video" }
 
     private fun friendlyMessage(e: Exception): String {
+        if (e is BlockedException) {
+            return "The site blocked this download (error 403). AnyGrab tried a few other ways and an engine update. " +
+                "Wait a few minutes and tap retry, or update the engine in Settings."
+        }
         val message = e.message.orEmpty()
         val errorLine = message.lines().lastOrNull { it.contains("ERROR", ignoreCase = true) }
         return (errorLine ?: message).trim().ifBlank { "Something went wrong." }.take(300)

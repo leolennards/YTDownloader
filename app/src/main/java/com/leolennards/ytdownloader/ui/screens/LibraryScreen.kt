@@ -3,6 +3,16 @@ package com.leolennards.ytdownloader.ui.screens
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import com.leolennards.ytdownloader.ui.theme.motionSpring
+import com.leolennards.ytdownloader.ui.theme.motionTween
+import com.leolennards.ytdownloader.ui.theme.rememberHaptics
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,10 +26,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,6 +54,7 @@ import com.leolennards.ytdownloader.ui.components.SegmentOption
 import com.leolennards.ytdownloader.ui.components.SegmentedControl
 import com.leolennards.ytdownloader.ui.components.YtIcon
 import com.leolennards.ytdownloader.ui.theme.PillShape
+import com.leolennards.ytdownloader.ui.theme.LocalBottomClearance
 import com.leolennards.ytdownloader.ui.theme.YtDimens
 import com.leolennards.ytdownloader.ui.theme.YtTheme
 import com.leolennards.ytdownloader.ui.theme.staggeredEntrance
@@ -68,6 +77,8 @@ fun LibraryScreen(
     onDelete: (DownloadItem) -> Unit,
     onAddFirst: () -> Unit,
     modifier: Modifier = Modifier,
+    playingUri: String? = null,
+    isPlaying: Boolean = false,
 ) {
     val context = LocalContext.current
     val filter = when (filterIndex) {
@@ -81,7 +92,6 @@ fun LibraryScreen(
     // done ones show in the saved list below, so only running or failed ones here
     val visibleJobs = jobs.filter { it.status != JobStatus.Done && (filter == null || it.format == filter) }
     val activeCount = visibleJobs.count { it.isActive }
-    var confirmDelete by remember { mutableStateOf<DownloadItem?>(null) }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -89,7 +99,7 @@ fun LibraryScreen(
             start = YtDimens.ScreenPadding,
             end = YtDimens.ScreenPadding,
             top = 24.dp,
-            bottom = YtDimens.NavBarClearance,
+            bottom = LocalBottomClearance.current,
         ),
     ) {
         item(key = "header") {
@@ -151,13 +161,21 @@ fun LibraryScreen(
             }
         }
         items(filtered, key = { it.uri ?: it.title + it.meta }) { item ->
-            DownloadRow(
-                item = item,
-                modifier = Modifier.animateItem(),
-                onClick = item.uri?.let { { onPlay(item, filtered.filter { it.uri != null }) } },
-                onShare = item.uri?.let { uri -> { share(context, item, uri) } },
-                onDelete = item.uri?.let { { confirmDelete = item } },
-            )
+            val uri = item.uri
+            val row = @Composable {
+                DownloadRow(
+                    item = item,
+                    nowPlaying = if (uri != null && uri == playingUri) isPlaying else null,
+                    onClick = uri?.let { { onPlay(item, filtered.filter { it.uri != null }) } },
+                    onShare = uri?.let { { share(context, item, it) } },
+                    onDelete = uri?.let { { onDelete(item) } },
+                )
+            }
+            if (uri == null) {
+                Box(Modifier.animateItem()) { row() }
+            } else {
+                SwipeToDelete(onDelete = { onDelete(item) }, modifier = Modifier.animateItem()) { row() }
+            }
         }
 
         if (filtered.isEmpty() && visibleJobs.isEmpty()) {
@@ -189,34 +207,55 @@ fun LibraryScreen(
         }
     }
 
-    confirmDelete?.let { item ->
-        AlertDialog(
-            onDismissRequest = { confirmDelete = null },
-            containerColor = MaterialTheme.colorScheme.surface,
-            title = { Text("Delete this file?", style = MaterialTheme.typography.titleLarge) },
-            text = {
-                Text(
-                    "\"${item.title}\" will be removed from your phone. This cannot be undone.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 4,
-                    overflow = TextOverflow.Ellipsis,
+}
+
+// swipe a row to the left to delete it. the menu has delete too, for people who do not swipe
+@Composable
+private fun SwipeToDelete(onDelete: () -> Unit, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    val haptics = rememberHaptics()
+    val state = rememberSwipeToDismissBoxState(
+        confirmValueChange = {
+            if (it == SwipeToDismissBoxValue.EndToStart) {
+                haptics.confirm()
+                onDelete()
+            }
+            false
+        },
+        positionalThreshold = { distance -> distance * 0.4f },
+    )
+    SwipeToDismissBox(
+        state = state,
+        modifier = modifier,
+        enableDismissFromStartToEnd = false,
+        backgroundContent = {
+            val past = state.targetValue == SwipeToDismissBoxValue.EndToStart
+            val bg by animateColorAsState(
+                if (past) MaterialTheme.colorScheme.error else YtTheme.colors.surfaceHigh,
+                motionTween(),
+                label = "swipeBg",
+            )
+            val iconScale by animateFloatAsState(if (past) 1.2f else 0.9f, motionSpring(dampingRatio = 0.5f), label = "swipeIcon")
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .clip(MaterialTheme.shapes.small)
+                    .background(bg)
+                    .padding(end = 24.dp),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                YtIcon(
+                    R.drawable.ic_delete,
+                    tint = if (past) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onSurfaceVariant,
+                    size = 22.dp,
+                    modifier = Modifier.graphicsLayer {
+                        scaleX = iconScale
+                        scaleY = iconScale
+                    },
                 )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmDelete = null
-                    onDelete(item)
-                }) {
-                    Text("Delete", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmDelete = null }) {
-                    Text("Keep it", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
-                }
-            },
-        )
+            }
+        },
+    ) {
+        Box(Modifier.background(MaterialTheme.colorScheme.background)) { content() }
     }
 }
 

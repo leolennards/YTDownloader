@@ -28,6 +28,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import com.leolennards.ytdownloader.ui.components.ConfettiBurst
+import com.leolennards.ytdownloader.ui.theme.rememberHaptics
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -101,7 +107,20 @@ fun DownloadingScreen(
         else -> listOf("Getting the details", "Downloading", "Converting", "Saving to your phone")[job.step.ordinal]
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
+    // the big moment: a little burst and a buzz when it is saved
+    val haptics = rememberHaptics()
+    var celebrated by remember(job?.id) { mutableStateOf(done) }
+    var burst by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(done) {
+        if (done && !celebrated) {
+            celebrated = true
+            haptics.confirm()
+            burst = job?.id
+        }
+    }
+
+    Box(modifier = modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -210,6 +229,8 @@ fun DownloadingScreen(
                 TextAction("Cancel this download", onCancel, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+    }
+    ConfettiBurst(burst, Modifier.fillMaxSize())
     }
 }
 

@@ -22,13 +22,17 @@ An Android app that saves videos and music from YouTube, TikTok, Instagram, Twit
 - Albums get their own folder with track numbers
 - A notification shows the progress while the app is closed
 - Share a link from another app to AnyGrab, and it can start downloading straight away (turn this on in Settings, and choose MP3 or MP4)
-- Failed downloads try again automatically, and you can retry them by hand
+- Failed downloads try again automatically. When YouTube blocks a download (error 403) the app updates yt-dlp and then tries other YouTube clients that still work, and you can retry by hand
 - A library screen with the cover of every song and a frame from every video, a search box, filters, share and delete
 - Play your MP3 and MP4 files inside the app, with previous and next, and the next song starts on its own
+- A mini player keeps the music going while you look around the app, with little bars bouncing on the song that is playing
+- Swipe a song to the left to delete it, with an undo button in case it was a mistake
+- If you copied a link, the paste screen offers it straight away
+- A small celebration when a download finishes, and a "Saved" message with a play button when you are on another screen
 - The preview shows the exact square cover your MP3 will get before you download it
 - Option to only download on Wi-Fi, so it does not use mobile data
 - Settings for the default format and quality, the save folder name, how many downloads run at once, Wi-Fi only, and a button to update yt-dlp by hand
-- Add a cookies file for sites that need you to be logged in, like Instagram
+- Add a cookies file for sites that need you to be logged in, like Instagram (YouTube only gets them when it asks for a login)
 - Light and dark theme
 
 ## Built with

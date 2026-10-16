@@ -13,7 +13,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -45,6 +47,7 @@ import com.leolennards.ytdownloader.ui.components.EyebrowLabel
 import com.leolennards.ytdownloader.ui.components.PrimaryButton
 import com.leolennards.ytdownloader.ui.components.RoundIconButton
 import com.leolennards.ytdownloader.ui.components.SegmentedControl
+import com.leolennards.ytdownloader.ui.components.SkeletonLine
 import com.leolennards.ytdownloader.ui.components.YtIcon
 import com.leolennards.ytdownloader.ui.theme.LocalMotionEnabled
 import com.leolennards.ytdownloader.ui.theme.PillShape
@@ -212,15 +215,16 @@ fun PreviewScreen(
                     }
 
                     else -> {
+                        // stand-ins shaped like the title and channel, so the page does not jump
+                        SkeletonLine(280.dp, 22.dp)
+                        SkeletonLine(180.dp, 22.dp)
+                        Spacer(Modifier.height(4.dp))
+                        SkeletonLine(120.dp)
                         Text(
-                            "Fetching the details",
-                            style = MaterialTheme.typography.headlineSmall,
-                            color = MaterialTheme.colorScheme.onBackground,
-                        )
-                        Text(
-                            "The first lookup can take a few seconds.",
-                            style = MaterialTheme.typography.bodyMedium,
+                            "Getting the details. The first lookup can take a few seconds.",
+                            style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 8.dp),
                         )
                     }
                 }

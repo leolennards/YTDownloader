@@ -1,5 +1,6 @@
 package com.leolennards.ytdownloader.ui.theme
 
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.unit.dp
 
 object YtDimens {
@@ -17,3 +18,6 @@ object YtDimens {
     // room at the bottom of scrolling screens so the floating nav bar never covers content
     val NavBarClearance = 104.dp
 }
+
+// how much room the floating nav bar (and mini player) take, so lists can scroll clear of them
+val LocalBottomClearance = compositionLocalOf { YtDimens.NavBarClearance }

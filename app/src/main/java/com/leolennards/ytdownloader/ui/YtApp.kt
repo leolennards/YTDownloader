@@ -8,6 +8,19 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.runtime.CompositionLocalProvider
+import com.leolennards.ytdownloader.data.Playback
+import com.leolennards.ytdownloader.ui.components.LocalScreenScope
+import com.leolennards.ytdownloader.ui.components.LocalSharedScope
+import com.leolennards.ytdownloader.ui.components.MiniPlayer
+import com.leolennards.ytdownloader.ui.screens.MusicPlayerScreen
+import com.leolennards.ytdownloader.ui.screens.VideoPlayerScreen
+import com.leolennards.ytdownloader.ui.theme.LocalBottomClearance
+import com.leolennards.ytdownloader.ui.theme.YtDimens
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -59,7 +72,6 @@ import com.leolennards.ytdownloader.ui.components.YtBottomBar
 import com.leolennards.ytdownloader.ui.screens.DownloadingScreen
 import com.leolennards.ytdownloader.ui.screens.LibraryScreen
 import com.leolennards.ytdownloader.ui.screens.PasteLinkScreen
-import com.leolennards.ytdownloader.ui.screens.PlayerScreen
 import com.leolennards.ytdownloader.ui.screens.PreviewScreen
 import com.leolennards.ytdownloader.ui.screens.QualityHeights
 import com.leolennards.ytdownloader.ui.screens.SettingsScreen
@@ -87,6 +99,7 @@ enum class Screen(val depth: Int) {
 
 
 // simple navigation with state, no navigation library needed
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun YtApp(
     sharedText: String? = null,
@@ -106,9 +119,12 @@ fun YtApp(
     }
     var libraryFilter by rememberSaveable { mutableIntStateOf(0) }
     var libraryQuery by rememberSaveable { mutableStateOf("") }
-    // the list the player was opened from, and which one in it is playing
-    var playlist by remember { mutableStateOf<List<DownloadItem>>(emptyList()) }
-    var playIndex by rememberSaveable { mutableIntStateOf(0) }
+    // videos play in the player screen itself, music plays in Playback so it keeps going
+    var videoList by remember { mutableStateOf<List<DownloadItem>>(emptyList()) }
+    var videoIndex by rememberSaveable { mutableIntStateOf(0) }
+    var playerIsVideo by rememberSaveable { mutableStateOf(false) }
+    // files waiting a moment before they are really deleted, so undo is possible
+    var pendingDeletes by remember { mutableStateOf<Set<String>>(emptySet()) }
     // where to go back to from the player
     var playerReturn by rememberSaveable { mutableStateOf(Screen.Library) }
     var focusJobId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -120,7 +136,8 @@ fun YtApp(
     val engineVersion by DownloadController.engineVersion.collectAsState()
     val updatingEngine by DownloadController.updating.collectAsState()
     val updateMessage by DownloadController.updateMessage.collectAsState()
-    val items = history.map { it.toItem() }
+    val playback by Playback.state.collectAsState()
+    val items = history.map { it.toItem() }.filter { it.uri == null || it.uri !in pendingDeletes }
 
     val active = queue.filter { it.isActive }
     val summary = if (active.isEmpty()) {
@@ -138,22 +155,26 @@ fun YtApp(
     var askedNotifications by rememberSaveable { mutableStateOf(false) }
     var pendingAction by remember { mutableStateOf<(() -> Unit)?>(null) }
 
-    // small message after adding to the queue
+    // small message at the bottom, with an optional button like undo or play
     var toastText by remember { mutableStateOf("") }
     var toastVisible by remember { mutableStateOf(false) }
     var toastTick by remember { mutableIntStateOf(0) }
-    fun showToast(text: String) {
+    var toastAction by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
+    var toastLong by remember { mutableStateOf(false) }
+    fun showToast(text: String, action: Pair<String, () -> Unit>? = null, long: Boolean = false) {
         toastText = text
+        toastAction = action
+        toastLong = long
         toastVisible = true
         toastTick++
     }
     // messages from the controller, like when a playlist is read
     LaunchedEffect(Unit) {
-        DownloadController.notices.collect { showToast(it) }
+        DownloadController.notices.collect { showToast(it, action = "View" to { toastVisible = false; screen = Screen.Library }) }
     }
     LaunchedEffect(toastTick) {
         if (toastTick > 0) {
-            delay(2800.milliseconds)
+            delay(if (toastLong) 4500.milliseconds else 2800.milliseconds)
             toastVisible = false
         }
     }
@@ -229,19 +250,62 @@ fun YtApp(
 
     fun play(item: DownloadItem, list: List<DownloadItem>) {
         val playable = list.filter { it.uri != null && it.format == item.format }.ifEmpty { listOf(item) }
-        playlist = playable
-        playIndex = playable.indexOfFirst { it.uri == item.uri }.coerceAtLeast(0)
+        val index = playable.indexOfFirst { it.uri == item.uri }.coerceAtLeast(0)
+        if (item.format == MediaFormat.MP4) {
+            // music and a video at the same time would be a mess
+            if (playback.playing) Playback.toggle()
+            videoList = playable
+            videoIndex = index
+            playerIsVideo = true
+        } else {
+            Playback.play(context, playable, index)
+            playerIsVideo = false
+        }
         playerReturn = if (screen == Screen.Player) playerReturn else screen
         screen = Screen.Player
     }
     val scope = rememberCoroutineScope()
+    // hides the file right away and deletes it a few seconds later, unless undo is tapped
     fun delete(item: DownloadItem) {
         val uri = item.uri ?: return
-        scope.launch {
-            val deleted = withContext(Dispatchers.IO) { DownloadController.deleteSaved(uri) }
+        pendingDeletes = pendingDeletes + uri
+        Playback.remove(uri)
+        haptics.confirm()
+        val job = scope.launch {
+            delay(4600.milliseconds)
+            withContext(Dispatchers.IO) { DownloadController.deleteSaved(uri) }
             ArtworkCache.forget(uri)
+            pendingDeletes = pendingDeletes - uri
+        }
+        showToast(
+            "Deleted \"${item.title.take(24)}\"",
+            action = "Undo" to {
+                job.cancel()
+                pendingDeletes = pendingDeletes - uri
+                toastVisible = false
+            },
+            long = true,
+        )
+    }
+
+    // when a download finishes and you are not watching it, say so, with a button to play it
+    val seenDone = remember { mutableSetOf<String>().apply { addAll(queue.filter { it.status == JobStatus.Done }.map { it.id }) } }
+    LaunchedEffect(queue) {
+        val newlyDone = queue.filter { it.status == JobStatus.Done && it.id !in seenDone }
+        newlyDone.forEach { seenDone.add(it.id) }
+        val last = newlyDone.lastOrNull() ?: return@LaunchedEffect
+        val watching = screen == Screen.Downloading && last.id == focusJobId
+        val result = last.result
+        if (!watching && result != null) {
             haptics.confirm()
-            showToast(if (deleted) "Deleted" else "Removed from the library")
+            showToast(
+                if (newlyDone.size > 1) "${newlyDone.size} downloads saved" else "Saved \"${last.title.take(22)}\"",
+                action = "Play" to {
+                    toastVisible = false
+                    play(result, items)
+                },
+                long = true,
+            )
         }
     }
 
@@ -256,6 +320,9 @@ fun YtApp(
     val slidePx = with(LocalDensity.current) { Motion.ScreenSlide.roundToPx() }
 
     val showBar = screen == Screen.Paste || screen == Screen.Library || screen == Screen.Settings
+    val showMini = showBar && playback.current != null
+    // room the floating bars take at the bottom, the screens pad their lists by this
+    val bottomClearance = YtDimens.NavBarClearance + if (showMini) 76.dp else 0.dp
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -267,6 +334,8 @@ fun YtApp(
                 .statusBarsPadding()
                 .imePadding(),
         ) {
+          SharedTransitionLayout {
+          CompositionLocalProvider(LocalSharedScope provides this, LocalBottomClearance provides bottomClearance) {
             AnimatedContent(
                 targetState = screen,
                 modifier = Modifier.fillMaxSize(),
@@ -286,6 +355,7 @@ fun YtApp(
                 },
                 label = "screens",
             ) { target ->
+              CompositionLocalProvider(LocalScreenScope provides this) {
                 when (target) {
                     Screen.Paste -> PasteLinkScreen(
                         url = url,
@@ -301,7 +371,7 @@ fun YtApp(
                                 val message = queueLinks(links, format, settings.defaultHeight)
                                 url = ""
                                 haptics.confirm()
-                                showToast(message)
+                                showToast(message, action = "View" to { toastVisible = false; screen = Screen.Library })
                             }
                         },
                         onSeeAll = { screen = Screen.Library },
@@ -361,19 +431,26 @@ fun YtApp(
                         onPlay = { item, list -> play(item, list) },
                         onDelete = { delete(it) },
                         onAddFirst = { screen = Screen.Paste },
+                        playingUri = playback.current?.uri,
+                        isPlaying = playback.playing,
                     )
 
-                    Screen.Player -> {
-                        if (playlist.isEmpty()) {
-                            LaunchedEffect(Unit) { screen = Screen.Library }
-                        } else {
-                            PlayerScreen(
-                                items = playlist,
-                                index = playIndex.coerceIn(0, playlist.lastIndex),
-                                onIndexChange = { playIndex = it },
-                                onBack = { screen = playerReturn },
-                            )
-                        }
+                    Screen.Player -> if (playerIsVideo) {
+                        VideoPlayerScreen(
+                            items = videoList,
+                            index = videoIndex,
+                            onIndexChange = { videoIndex = it },
+                            onBack = { screen = playerReturn },
+                        )
+                    } else {
+                        MusicPlayerScreen(
+                            state = playback,
+                            onBack = { screen = playerReturn },
+                            onToggle = { Playback.toggle() },
+                            onSeek = { Playback.seekTo(it) },
+                            onPrevious = { Playback.previous() },
+                            onNext = { Playback.next() },
+                        )
                     }
 
                     Screen.Settings -> SettingsScreen(
@@ -388,20 +465,20 @@ fun YtApp(
                         onClearCookies = onClearCookies,
                     )
                 }
+              }
             }
+          }
+          }
 
             ToastHost(
                 visible = toastVisible,
                 text = toastText,
-                actionLabel = "View",
-                onAction = {
-                    toastVisible = false
-                    screen = Screen.Library
-                },
+                actionLabel = toastAction?.first,
+                onAction = { toastAction?.second?.invoke() },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
-                    .padding(start = 16.dp, end = 16.dp, bottom = if (showBar) 96.dp else 16.dp),
+                    .padding(start = 16.dp, end = 16.dp, bottom = if (showBar) bottomClearance - 8.dp else 16.dp),
             )
         }
         AnimatedVisibility(
@@ -410,6 +487,28 @@ fun YtApp(
             enter = fadeIn(ytTween(motion)) + slideInVertically(ytSpring(motion)) { it },
             exit = fadeOut(ytTween(motion, Motion.Micro)) + slideOutVertically(ytSpring(motion)) { it },
         ) {
+          Column {
+            AnimatedVisibility(
+                visible = showMini,
+                enter = fadeIn(ytTween(motion)) + expandVertically(ytSpring(motion)) + slideInVertically(ytSpring(motion)) { it },
+                exit = fadeOut(ytTween(motion, Motion.Micro)) + shrinkVertically(ytSpring(motion)),
+            ) {
+                // keep the last song so it can animate out
+                val shown = remember { arrayOf(playback) }
+                if (playback.current != null) shown[0] = playback
+                MiniPlayer(
+                    state = shown[0],
+                    onOpen = {
+                        playerIsVideo = false
+                        playerReturn = screen
+                        screen = Screen.Player
+                    },
+                    onToggle = { Playback.toggle() },
+                    onNext = { Playback.next() },
+                    onStop = { Playback.stop() },
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp),
+                )
+            }
             YtBottomBar(
                 badge = active.size,
                 selected = when (screen) {
@@ -425,6 +524,7 @@ fun YtApp(
                     }
                 },
             )
+          }
         }
     }
 }

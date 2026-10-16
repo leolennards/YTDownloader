@@ -2,6 +2,27 @@ package com.leolennards.ytdownloader.ui.screens
 
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.ClipDescription
+import android.os.Build
+import android.view.textclassifier.TextClassifier
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalWindowInfo
+import com.leolennards.ytdownloader.ui.components.sharedArt
+import com.leolennards.ytdownloader.ui.theme.LocalMotionEnabled
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -53,6 +74,7 @@ import com.leolennards.ytdownloader.ui.components.TextAction
 import com.leolennards.ytdownloader.ui.components.YtCard
 import com.leolennards.ytdownloader.ui.components.YtIcon
 import com.leolennards.ytdownloader.ui.components.YtProgressBar
+import com.leolennards.ytdownloader.ui.theme.LocalBottomClearance
 import com.leolennards.ytdownloader.ui.theme.YtDimens
 import com.leolennards.ytdownloader.ui.theme.YtTheme
 import com.leolennards.ytdownloader.ui.theme.motionTween
@@ -94,6 +116,12 @@ fun PasteLinkScreen(
         url.isNotBlank() && links.isEmpty() -> "That does not look like a link yet"
         else -> null
     }
+    // a link sitting on the clipboard, offered as a one tap paste
+    val windowFocused = LocalWindowInfo.current.isWindowFocused
+    var copiedLink by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(windowFocused, url) {
+        if (windowFocused) copiedLink = clipboardLink(context)?.takeIf { it.trim() != url.trim() }
+    }
     // keep the old hint so it can fade out
     val lastHint = remember { arrayOf("") }
     if (hint != null) lastHint[0] = hint
@@ -107,17 +135,20 @@ fun PasteLinkScreen(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(top = 24.dp, bottom = YtDimens.NavBarClearance),
+            .padding(top = 24.dp, bottom = LocalBottomClearance.current),
         verticalArrangement = Arrangement.spacedBy(YtDimens.SectionGap),
     ) {
-        ScreenHeader(
-            eyebrow = "AnyGrab",
-            title = "Grab anything",
-            subtitle = "Paste a link from YouTube, TikTok, Instagram, X, SoundCloud and more.",
-            modifier = Modifier
-                .padding(horizontal = YtDimens.ScreenPadding)
-                .staggeredEntrance(0, "paste-0"),
-        )
+        Box {
+            AmbientGlow(Modifier.matchParentSize())
+            ScreenHeader(
+                eyebrow = "AnyGrab",
+                title = "Grab anything",
+                subtitle = "Paste a link from YouTube, TikTok, Instagram, X, SoundCloud and more.",
+                modifier = Modifier
+                    .padding(horizontal = YtDimens.ScreenPadding)
+                    .staggeredEntrance(0, "paste-0"),
+            )
+        }
 
         YtCard(
             Modifier
@@ -163,6 +194,37 @@ fun PasteLinkScreen(
                     )
                     if (url.isNotEmpty()) {
                         RoundIconButton(R.drawable.ic_close, "Clear", { onUrlChange("") })
+                    }
+                }
+                // the copied link, ready to use. tapping it fills the box
+                AnimatedVisibility(visible = copiedLink != null && url.isBlank(), enter = ytEnter(), exit = ytExit()) {
+                    val shown = remember { arrayOf("") }
+                    copiedLink?.let { shown[0] = it }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(MaterialTheme.shapes.small)
+                            .ytClickable(haptic = false, pressedScale = 0.98f) {
+                                haptics.confirm()
+                                onUrlChange(shown[0])
+                            }
+                            .background(YtTheme.colors.tonal)
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        YtIcon(R.drawable.ic_clipboard, tint = YtTheme.colors.accentText, size = 18.dp)
+                        Column(Modifier.weight(1f)) {
+                            Text("Use the link you copied", style = MaterialTheme.typography.titleSmall, color = YtTheme.colors.accentText)
+                            Text(
+                                shown[0].removePrefix("https://").removePrefix("www."),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        YtIcon(R.drawable.ic_arrow_right, tint = YtTheme.colors.accentText, size = 18.dp)
                     }
                 }
                 SecondaryButton(
@@ -304,7 +366,7 @@ private fun RecentTile(item: DownloadItem, onClick: () -> Unit) {
         Artwork(
             item.uri,
             item.format,
-            Modifier.size(132.dp),
+            Modifier.size(132.dp).sharedArt(item.uri),
             shape = MaterialTheme.shapes.medium,
             loadSize = 264.dp,
             iconSize = 28.dp,
@@ -326,6 +388,45 @@ private fun RecentTile(item: DownloadItem, onClick: () -> Unit) {
             )
         }
     }
+}
+
+// a soft amber light that drifts slowly behind the title
+@Composable
+private fun AmbientGlow(modifier: Modifier) {
+    val motion = LocalMotionEnabled.current
+    val t by rememberInfiniteTransition(label = "glow").animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(9000, easing = LinearEasing), RepeatMode.Reverse),
+        label = "glowT",
+    )
+    val phase = if (motion) t else 0.5f
+    val accent = YtTheme.colors.accent
+    Canvas(modifier) {
+        val r = size.width * 0.55f
+        drawCircle(
+            Brush.radialGradient(
+                listOf(accent.copy(alpha = 0.22f), Color.Transparent),
+                center = Offset(size.width * (0.75f + 0.12f * phase), size.height * (0.15f + 0.3f * phase)),
+                radius = r,
+            ),
+            radius = r,
+            center = Offset(size.width * (0.75f + 0.12f * phase), size.height * (0.15f + 0.3f * phase)),
+        )
+    }
+}
+
+// a link on the clipboard, without the android 12 "pasted from your clipboard" message.
+// newer android can tell from the clip's description if it is a link, older ones can read it quietly
+private fun clipboardLink(context: Context): String? {
+    val manager = context.getSystemService(ClipboardManager::class.java) ?: return null
+    val description = manager.primaryClipDescription ?: return null
+    if (!description.hasMimeType(ClipDescription.MIMETYPE_TEXT_PLAIN) && !description.hasMimeType(ClipDescription.MIMETYPE_TEXT_URILIST)) return null
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        val classified = description.classificationStatus == ClipDescription.CLASSIFICATION_COMPLETE
+        if (!classified || description.getConfidenceScore(TextClassifier.TYPE_URL) < 0.5f) return null
+    }
+    return readClipboard(context)?.let { extractLinks(it).firstOrNull() }
 }
 
 private fun readClipboard(context: Context): String? {

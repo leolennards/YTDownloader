@@ -38,6 +38,7 @@ import com.leolennards.ytdownloader.ui.components.SecondaryButton
 import com.leolennards.ytdownloader.ui.components.SegmentOption
 import com.leolennards.ytdownloader.ui.components.SegmentedControl
 import com.leolennards.ytdownloader.ui.components.YtCard
+import com.leolennards.ytdownloader.ui.theme.LocalBottomClearance
 import com.leolennards.ytdownloader.ui.theme.YtDimens
 import com.leolennards.ytdownloader.ui.theme.YtTheme
 import com.leolennards.ytdownloader.ui.theme.rememberHaptics
@@ -170,7 +171,7 @@ fun SettingsScreen(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = YtDimens.ScreenPadding)
-            .padding(top = 24.dp, bottom = YtDimens.NavBarClearance),
+            .padding(top = 24.dp, bottom = LocalBottomClearance.current),
         verticalArrangement = Arrangement.spacedBy(YtDimens.SectionGap),
     ) {
         ScreenHeader(

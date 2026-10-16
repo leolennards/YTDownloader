@@ -6,6 +6,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -51,6 +52,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -67,6 +69,7 @@ import com.leolennards.ytdownloader.data.DownloadItem
 import com.leolennards.ytdownloader.data.JobStatus
 import com.leolennards.ytdownloader.data.JobStep
 import com.leolennards.ytdownloader.data.QueueJob
+import com.leolennards.ytdownloader.ui.theme.ArtShape
 import com.leolennards.ytdownloader.ui.theme.EyebrowStyle
 import com.leolennards.ytdownloader.ui.theme.LocalMotionEnabled
 import com.leolennards.ytdownloader.ui.theme.Motion
@@ -444,7 +447,8 @@ fun YtProgressBar(progress: Float, modifier: Modifier = Modifier, height: Dp = 6
 fun DownloadRow(
     item: DownloadItem,
     modifier: Modifier = Modifier,
-    playing: Boolean = false,
+    // null when this is not the song playing, otherwise if it is playing or paused
+    nowPlaying: Boolean? = null,
     onClick: (() -> Unit)? = null,
     onShare: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
@@ -458,12 +462,27 @@ fun DownloadRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Artwork(item.uri, item.format, Modifier.size(YtDimens.RowArt))
+        Box(contentAlignment = Alignment.Center) {
+            Artwork(item.uri, item.format, Modifier.size(YtDimens.RowArt).sharedArt(item.uri))
+            // dark veil with bouncing bars on the song that is playing
+            val veil by animateFloatAsState(if (nowPlaying != null) 1f else 0f, motionTween(), label = "nowPlayingVeil")
+            if (veil > 0f) {
+                Box(
+                    Modifier
+                        .size(YtDimens.RowArt)
+                        .graphicsLayer { alpha = veil }
+                        .background(Color.Black.copy(alpha = 0.45f), ArtShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Equalizer(nowPlaying == true, color = Color.White, height = 18.dp)
+                }
+            }
+        }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(
                 item.title,
                 style = MaterialTheme.typography.titleSmall,
-                color = if (playing) YtTheme.colors.accentText else MaterialTheme.colorScheme.onSurface,
+                color = if (nowPlaying != null) YtTheme.colors.accentText else MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -556,6 +575,7 @@ fun QueueJobCard(
         failed -> job.error ?: "Something went wrong."
         job.status == JobStatus.Queued && job.waitingForWifi -> "Waiting for Wi-Fi"
         job.status == JobStatus.Queued -> "Waiting for a free slot"
+        job.step == JobStep.Preparing && job.retrying -> "Trying another way"
         job.step == JobStep.Preparing -> "Getting ready"
         job.step == JobStep.Downloading -> "Downloading · ${(job.progress * 100).toInt()}%"
         job.step == JobStep.Converting -> "Converting"

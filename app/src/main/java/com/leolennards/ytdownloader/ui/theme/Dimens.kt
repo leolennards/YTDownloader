@@ -3,10 +3,17 @@ package com.leolennards.ytdownloader.ui.theme
 import androidx.compose.ui.unit.dp
 
 object YtDimens {
-    val ScreenPadding = 24.dp
-    val CardRadius = 20.dp
+    val ScreenPadding = 20.dp
+    val CardRadius = 24.dp
+    val CardPadding = 18.dp
     val Hairline = 1.dp
-    val MinTouch = 44.dp
+    val MinTouch = 48.dp
     val PrimaryButtonHeight = 56.dp
-    val SectionGap = 20.dp
+    val SectionGap = 24.dp
+    val ItemGap = 12.dp
+    // artwork in list rows and the big one on the player
+    val RowArt = 56.dp
+    val ArtRadius = 14.dp
+    // room at the bottom of scrolling screens so the floating nav bar never covers content
+    val NavBarClearance = 104.dp
 }

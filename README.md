@@ -18,12 +18,14 @@ An Android app that saves videos and music from YouTube, TikTok, Instagram, Twit
 - Paste several links at once and they all go into a queue
 - Paste a playlist or an album link and every track is added to the queue
 - Several downloads run at the same time (you choose 1 to 3 in Settings)
-- MP3 files get tags and cover art, and albums get their own folder with track numbers
+- MP3 files get tags and a clean square cover. The app takes the sharpest thumbnail it can find, cuts off any black bars baked into it and crops it to a square that fills the whole cover (up to 1200 x 1200)
+- Albums get their own folder with track numbers
 - A notification shows the progress while the app is closed
 - Share a link from another app to AnyGrab, and it can start downloading straight away (turn this on in Settings, and choose MP3 or MP4)
 - Failed downloads try again automatically, and you can retry them by hand
-- A library screen with everything you have downloaded, a search box, and a share button
-- Play your MP3 and MP4 files inside the app
+- A library screen with the cover of every song and a frame from every video, a search box, filters, share and delete
+- Play your MP3 and MP4 files inside the app, with previous and next, and the next song starts on its own
+- The preview shows the exact square cover your MP3 will get before you download it
 - Option to only download on Wi-Fi, so it does not use mobile data
 - Settings for the default format and quality, the save folder name, how many downloads run at once, Wi-Fi only, and a button to update yt-dlp by hand
 - Add a cookies file for sites that need you to be logged in, like Instagram
@@ -43,18 +45,19 @@ No navigation library and no database, to keep the dependencies small. The scree
 ## How it is organised
 
 - `data/DownloadController.kt` is the main part. It keeps the queue, runs the downloads and reads playlists
+- `data/CoverArt.kt` makes the square cover and writes it into the MP3's ID3 tag
 - `DownloadService.kt` keeps downloads alive in the background and shows the notification
-- `ui/screens` has the four screens: paste a link, preview, downloading and library
-- `ui/components` has the shared pieces like buttons, cards and the progress bar
+- `ui/screens` has the screens: paste a link, preview, downloading, library, player and settings
+- `ui/components` has the shared pieces like buttons, cards, the floating nav bar and the artwork loader
 - `ui/theme` has the colors, fonts, shapes and the animation helpers
 
 ## The design
 
-I wanted it to look calm and clean: cream and near black backgrounds, a gold accent, rounded pill buttons and thin borders. The font is Manrope. Animations use springs and turn off if the system animations are off.
+Deep graphite and soft paper white backgrounds with one bright amber accent, so the cover art does most of the talking. Bold Manrope titles, rounded cards, pill buttons and a floating nav bar. Every screen has one clear main action, lists show real artwork, and the player takes its background glow from the song's cover. Animations use springs and turn off if the system animations are off.
 
 ## Tests
 
-There are unit tests for the link detection and the title cleaning in `app/src/test`. Run them with `./gradlew test`.
+There are unit tests for the link detection, the title cleaning, the black bar trimming and the ID3 cover writer in `app/src/test`. Run them with `./gradlew test`.
 
 ## Running it
 

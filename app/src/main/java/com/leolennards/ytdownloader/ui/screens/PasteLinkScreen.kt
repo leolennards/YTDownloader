@@ -3,6 +3,7 @@ package com.leolennards.ytdownloader.ui.screens
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,44 +11,51 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.leolennards.ytdownloader.R
 import com.leolennards.ytdownloader.data.DownloadItem
 import com.leolennards.ytdownloader.data.QueueSummary
 import com.leolennards.ytdownloader.data.extractLinks
 import com.leolennards.ytdownloader.data.isPlaylistLink
-import com.leolennards.ytdownloader.ui.components.DownloadRow
-import com.leolennards.ytdownloader.ui.components.GoldButton
+import com.leolennards.ytdownloader.ui.components.Artwork
 import com.leolennards.ytdownloader.ui.components.IconTile
-import com.leolennards.ytdownloader.ui.components.OutlinePillButton
+import com.leolennards.ytdownloader.ui.components.PrimaryButton
+import com.leolennards.ytdownloader.ui.components.RoundIconButton
 import com.leolennards.ytdownloader.ui.components.ScreenHeader
+import com.leolennards.ytdownloader.ui.components.SecondaryButton
+import com.leolennards.ytdownloader.ui.components.SectionHeader
 import com.leolennards.ytdownloader.ui.components.SegmentOption
 import com.leolennards.ytdownloader.ui.components.SegmentedControl
+import com.leolennards.ytdownloader.ui.components.TextAction
 import com.leolennards.ytdownloader.ui.components.YtCard
 import com.leolennards.ytdownloader.ui.components.YtIcon
 import com.leolennards.ytdownloader.ui.components.YtProgressBar
-import com.leolennards.ytdownloader.ui.theme.PillShape
 import com.leolennards.ytdownloader.ui.theme.YtDimens
 import com.leolennards.ytdownloader.ui.theme.YtTheme
+import com.leolennards.ytdownloader.ui.theme.motionTween
 import com.leolennards.ytdownloader.ui.theme.rememberHaptics
 import com.leolennards.ytdownloader.ui.theme.staggeredEntrance
 import com.leolennards.ytdownloader.ui.theme.ytClickable
@@ -68,72 +76,83 @@ fun PasteLinkScreen(
     onFetch: () -> Unit,
     onQueue: (List<String>) -> Unit,
     onSeeAll: () -> Unit,
+    onPlay: (DownloadItem) -> Unit,
     queue: QueueSummary?,
-    recent: DownloadItem?,
+    recent: List<DownloadItem>,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val haptics = rememberHaptics()
     val links = remember(url) { extractLinks(url) }
     val playlistCount = links.count { isPlaylistLink(it) }
+    // one normal link opens the preview, anything else goes straight to the queue
+    val single = links.size == 1 && playlistCount == 0
     val hint = when {
-        links.size == 1 && playlistCount == 1 -> "Playlist found. Every video in it will be added to the queue."
+        links.size == 1 && playlistCount == 1 -> "Playlist found. Every track in it will be added."
         links.size > 1 && playlistCount > 0 -> "${links.size} links found, including $playlistCount playlist"
         links.size > 1 -> "${links.size} links found"
+        url.isNotBlank() && links.isEmpty() -> "That does not look like a link yet"
         else -> null
     }
     // keep the old hint so it can fade out
     val lastHint = remember { arrayOf("") }
     if (hint != null) lastHint[0] = hint
+    val fieldBorder by animateColorAsState(
+        if (links.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+        motionTween(),
+        label = "fieldBorder",
+    )
 
     Column(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = YtDimens.ScreenPadding)
-            .padding(top = 24.dp, bottom = 16.dp),
+            .padding(top = 24.dp, bottom = YtDimens.NavBarClearance),
         verticalArrangement = Arrangement.spacedBy(YtDimens.SectionGap),
     ) {
         ScreenHeader(
-            eyebrow = "New download",
-            title = "Paste a link",
-            subtitle = "Save videos as MP3 or MP4. Paste one link or a whole list.",
-            modifier = Modifier.staggeredEntrance(0, "paste-0"),
+            eyebrow = "AnyGrab",
+            title = "Grab anything",
+            subtitle = "Paste a link from YouTube, TikTok, Instagram, X, SoundCloud and more.",
+            modifier = Modifier
+                .padding(horizontal = YtDimens.ScreenPadding)
+                .staggeredEntrance(0, "paste-0"),
         )
 
-        YtCard(Modifier.fillMaxWidth().staggeredEntrance(1, "paste-1")) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    "Video link",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    YtIcon(R.drawable.ic_link, tint = YtTheme.colors.goldText)
+        YtCard(
+            Modifier
+                .padding(horizontal = YtDimens.ScreenPadding)
+                .fillMaxWidth()
+                .staggeredEntrance(1, "paste-1"),
+            borderColor = fieldBorder,
+        ) {
+            Column(Modifier.padding(YtDimens.CardPadding), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    YtIcon(
+                        R.drawable.ic_link,
+                        tint = YtTheme.colors.accentText,
+                        modifier = Modifier.padding(top = 14.dp),
+                    )
                     BasicTextField(
                         value = url,
                         onValueChange = onUrlChange,
                         modifier = Modifier.weight(1f),
                         minLines = 1,
-                        maxLines = 4,
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(
-                            color = MaterialTheme.colorScheme.onSurface,
-                        ),
+                        maxLines = 5,
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
                         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
                         decorationBox = { innerTextField ->
                             Box(
                                 Modifier
                                     .fillMaxWidth()
-                                    .heightIn(min = 48.dp),
+                                    .heightIn(min = 48.dp)
+                                    .padding(vertical = 12.dp),
                                 contentAlignment = Alignment.CenterStart,
                             ) {
                                 if (url.isEmpty()) {
                                     Text(
-                                        "https://",
+                                        "Paste one link, or a few",
                                         style = MaterialTheme.typography.bodyLarge,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -142,38 +161,40 @@ fun PasteLinkScreen(
                             }
                         },
                     )
-                    Button(
-                        onClick = {
-                            haptics.tick()
-                            readClipboard(context)?.let(onUrlChange)
-                        },
-                        modifier = Modifier.height(YtDimens.MinTouch),
-                        shape = PillShape,
-                        contentPadding = PaddingValues(horizontal = 18.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = YtTheme.colors.tonal,
-                            contentColor = YtTheme.colors.goldText,
-                        ),
-                    ) {
-                        Text("Paste", style = MaterialTheme.typography.labelLarge)
+                    if (url.isNotEmpty()) {
+                        RoundIconButton(R.drawable.ic_close, "Clear", { onUrlChange("") })
                     }
                 }
+                SecondaryButton(
+                    text = "Paste from clipboard",
+                    icon = R.drawable.ic_clipboard,
+                    onClick = {
+                        readClipboard(context)?.let {
+                            haptics.confirm()
+                            onUrlChange(it)
+                        }
+                    },
+                    contentColor = YtTheme.colors.accentText,
+                    modifier = Modifier.fillMaxWidth(),
+                )
                 AnimatedVisibility(visible = hint != null, enter = ytEnter(), exit = ytExit()) {
                     Text(
                         lastHint[0],
                         style = MaterialTheme.typography.labelMedium,
-                        color = YtTheme.colors.goldText,
+                        color = if (links.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else YtTheme.colors.accentText,
                     )
                 }
             }
         }
 
         Column(
-            modifier = Modifier.staggeredEntrance(2, "paste-2"),
+            modifier = Modifier
+                .padding(horizontal = YtDimens.ScreenPadding)
+                .staggeredEntrance(2, "paste-2"),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(
-                "Format",
+                "Save as",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -181,46 +202,49 @@ fun PasteLinkScreen(
         }
 
         Column(
-            modifier = Modifier.staggeredEntrance(3, "paste-3"),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier
+                .padding(horizontal = YtDimens.ScreenPadding)
+                .staggeredEntrance(3, "paste-3"),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            GoldButton(
-                text = "Fetch video",
-                onClick = onFetch,
-                enabled = links.size == 1 && playlistCount == 0,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            OutlinePillButton(
+            PrimaryButton(
                 text = when {
-                    links.size == 1 && playlistCount == 1 -> "Add playlist to queue"
-                    links.size > 1 -> "Add ${links.size} to queue"
-                    else -> "Add to queue"
+                    links.isEmpty() -> "Paste a link to start"
+                    single -> "Continue"
+                    links.size == 1 -> "Add playlist to queue"
+                    else -> "Add ${links.size} to queue"
                 },
-                onClick = { onQueue(links) },
+                icon = if (single) R.drawable.ic_arrow_right else if (links.isNotEmpty()) R.drawable.ic_download else null,
+                onClick = { if (single) onFetch() else onQueue(links) },
                 enabled = links.isNotEmpty(),
                 modifier = Modifier.fillMaxWidth(),
             )
+            AnimatedVisibility(visible = single, enter = ytEnter(), exit = ytExit()) {
+                TextAction("Skip the preview and add to queue", onClick = { onQueue(links) })
+            }
             Text(
-                if (formatIndex == 1) {
-                    "Queue saves video at 720p. Fetch video lets you choose the quality."
-                } else {
-                    "Only save content you own or have permission to download."
-                },
-                modifier = Modifier.fillMaxWidth(),
+                "Only save content you own or have permission to download.",
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                 style = MaterialTheme.typography.labelMedium.copy(textAlign = TextAlign.Center),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
         AnimatedVisibility(visible = queue != null, enter = ytEnter(), exit = ytExit()) {
-            // same for the queue summary
+            // keep the last summary so it can animate out
             val shown = remember { arrayOfNulls<QueueSummary>(1) }
             if (queue != null) shown[0] = queue
             shown[0]?.let { summary ->
-                YtCard(Modifier.fillMaxWidth().ytClickable(onClick = onSeeAll)) {
+                YtCard(
+                    Modifier
+                        .padding(horizontal = YtDimens.ScreenPadding)
+                        .fillMaxWidth()
+                        .ytClickable(pressedScale = 0.98f, onClick = onSeeAll),
+                ) {
                     Column(
-                        modifier = Modifier.padding(start = 10.dp, top = 10.dp, end = 14.dp, bottom = 14.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.padding(YtDimens.CardPadding),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -229,59 +253,77 @@ fun PasteLinkScreen(
                             IconTile(R.drawable.ic_download)
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(
-                                    "Downloading ${summary.running}",
+                                    if (summary.running == 1) "1 download running" else "${summary.running} downloads running",
                                     style = MaterialTheme.typography.titleSmall,
                                     color = MaterialTheme.colorScheme.onSurface,
                                 )
                                 Text(
-                                    if (summary.waiting > 0) "${summary.waiting} waiting in the queue" else "Tap to see progress",
+                                    if (summary.waiting > 0) "${summary.waiting} waiting · tap to see the queue" else "Tap to see progress",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
+                            YtIcon(R.drawable.ic_arrow_right, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        YtProgressBar(summary.progress, Modifier.padding(start = 4.dp))
+                        YtProgressBar(summary.progress, height = 4.dp)
                     }
                 }
             }
         }
 
-        Column(
-            modifier = Modifier.staggeredEntrance(4, "paste-4"),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    "Recent",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onBackground,
+        if (recent.isNotEmpty()) {
+            Column(modifier = Modifier.staggeredEntrance(4, "paste-4")) {
+                SectionHeader(
+                    "Recently saved",
+                    modifier = Modifier.padding(horizontal = YtDimens.ScreenPadding),
+                    actionLabel = "See all",
+                    onAction = onSeeAll,
                 )
-                Box(
-                    modifier = Modifier
-                        .height(YtDimens.MinTouch)
-                        .ytClickable(onClick = onSeeAll),
-                    contentAlignment = Alignment.Center,
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = YtDimens.ScreenPadding),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    Text(
-                        "See all",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = YtTheme.colors.goldText,
-                    )
+                    items(recent, key = { it.uri ?: it.title }) { item ->
+                        RecentTile(item, onClick = { onPlay(item) })
+                    }
                 }
             }
-            if (recent != null) {
-                DownloadRow(recent)
-            } else {
-                Text(
-                    "Downloads you save will show up here.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+        }
+    }
+}
+
+// square cover with the title under it, for the recent row
+@Composable
+private fun RecentTile(item: DownloadItem, onClick: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .width(132.dp)
+            .ytClickable(enabled = item.uri != null, pressedScale = 0.96f, onClick = onClick),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Artwork(
+            item.uri,
+            item.format,
+            Modifier.size(132.dp),
+            shape = MaterialTheme.shapes.medium,
+            loadSize = 264.dp,
+            iconSize = 28.dp,
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                item.title,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                item.artist?.takeIf { it.isNotBlank() } ?: item.format.label,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

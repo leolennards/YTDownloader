@@ -7,9 +7,9 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -20,7 +20,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -31,25 +33,35 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.leolennards.ytdownloader.R
 import com.leolennards.ytdownloader.data.DownloadItem
 import com.leolennards.ytdownloader.data.JobStatus
@@ -90,13 +102,14 @@ fun YtIcon(
 fun YtCard(
     modifier: Modifier = Modifier,
     borderColor: Color = MaterialTheme.colorScheme.outline,
+    color: Color = MaterialTheme.colorScheme.surface,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val border by animateColorAsState(borderColor, motionTween(), label = "cardBorder")
     Surface(
         modifier = modifier,
         shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surface,
+        color = color,
         border = BorderStroke(YtDimens.Hairline, border),
     ) {
         Column(content = content)
@@ -104,63 +117,105 @@ fun YtCard(
 }
 
 @Composable
-fun IconTile(@DrawableRes icon: Int, modifier: Modifier = Modifier) {
+fun IconTile(@DrawableRes icon: Int, modifier: Modifier = Modifier, size: Dp = 44.dp) {
     Box(
         modifier = modifier
-            .size(44.dp)
+            .size(size)
             .background(YtTheme.colors.tonal, MaterialTheme.shapes.small),
         contentAlignment = Alignment.Center,
     ) {
-        YtIcon(icon, tint = YtTheme.colors.goldText)
+        YtIcon(icon, tint = YtTheme.colors.accentText)
     }
 }
 
 @Composable
 fun EyebrowLabel(text: String, modifier: Modifier = Modifier) {
-    Text(text.uppercase(), modifier = modifier, style = EyebrowStyle, color = YtTheme.colors.goldText)
+    Text(text.uppercase(), modifier = modifier, style = EyebrowStyle, color = YtTheme.colors.accentText)
 }
 
-// screen title, fades when the text changes
+// screen title, fades when the text changes. trailing sits at the end of the title row
 @Composable
 fun ScreenHeader(
     eyebrow: String,
     title: String,
     modifier: Modifier = Modifier,
     subtitle: String? = null,
+    trailing: (@Composable RowScope.() -> Unit)? = null,
 ) {
     val motion = LocalMotionEnabled.current
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        AnimatedContent(
-            targetState = eyebrow,
-            transitionSpec = { fadeIn(ytTween(motion)) togetherWith fadeOut(ytTween(motion, Motion.Micro)) },
-            label = "eyebrow",
-        ) { text ->
-            Text(text.uppercase(), style = EyebrowStyle, color = YtTheme.colors.goldText)
-        }
-        AnimatedContent(
-            targetState = title,
-            transitionSpec = { fadeIn(ytTween(motion)) togetherWith fadeOut(ytTween(motion, Motion.Micro)) },
-            label = "title",
-        ) { text ->
-            Text(
-                text,
-                style = MaterialTheme.typography.headlineLarge,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-        }
-        if (subtitle != null) {
+    Row(modifier = modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             AnimatedContent(
-                targetState = subtitle,
+                targetState = eyebrow,
                 transitionSpec = { fadeIn(ytTween(motion)) togetherWith fadeOut(ytTween(motion, Motion.Micro)) },
-                label = "subtitle",
+                label = "eyebrow",
+            ) { text ->
+                EyebrowLabel(text)
+            }
+            AnimatedContent(
+                targetState = title,
+                transitionSpec = { fadeIn(ytTween(motion)) togetherWith fadeOut(ytTween(motion, Motion.Micro)) },
+                label = "title",
             ) { text ->
                 Text(
                     text,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = MaterialTheme.colorScheme.onBackground,
                 )
             }
+            if (subtitle != null) {
+                AnimatedContent(
+                    targetState = subtitle,
+                    transitionSpec = { fadeIn(ytTween(motion)) togetherWith fadeOut(ytTween(motion, Motion.Micro)) },
+                    label = "subtitle",
+                ) { text ->
+                    Text(
+                        text,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
         }
+        trailing?.invoke(this)
+    }
+}
+
+// title on the left of a list section, optional text action on the right
+@Composable
+fun SectionHeader(
+    title: String,
+    modifier: Modifier = Modifier,
+    actionLabel: String? = null,
+    onAction: () -> Unit = {},
+) {
+    Row(
+        modifier = modifier.fillMaxWidth().height(YtDimens.MinTouch),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onBackground)
+        if (actionLabel != null) TextAction(actionLabel, onAction)
+    }
+}
+
+// a tappable word, like "See all" or "Cancel all"
+@Composable
+fun TextAction(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    color: Color = YtTheme.colors.accentText,
+) {
+    Box(
+        modifier = modifier
+            .height(YtDimens.MinTouch)
+            .clip(PillShape)
+            .ytClickable(onClick = onClick)
+            .padding(horizontal = 4.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, style = MaterialTheme.typography.labelLarge, color = color)
     }
 }
 
@@ -175,10 +230,11 @@ fun SegmentedControl(
     modifier: Modifier = Modifier,
 ) {
     val gap = 4.dp
+    val haptics = rememberHaptics()
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .background(YtTheme.colors.track, PillShape)
+            .background(YtTheme.colors.surfaceHigh, PillShape)
             .padding(4.dp),
     ) {
         val segment = (maxWidth - gap * (options.size - 1)) / options.size
@@ -191,7 +247,7 @@ fun SegmentedControl(
             Modifier
                 .offset(x = indicatorX)
                 .width(segment)
-                .height(YtDimens.MinTouch)
+                .height(YtDimens.MinTouch - 4.dp)
                 .background(MaterialTheme.colorScheme.secondary, PillShape),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
@@ -205,9 +261,16 @@ fun SegmentedControl(
                 Row(
                     modifier = Modifier
                         .weight(1f)
-                        .height(YtDimens.MinTouch)
-                        .ytClickable { onSelect(index) }
-                        .clip(PillShape),
+                        .height(YtDimens.MinTouch - 4.dp)
+                        .clip(PillShape)
+                        .ytClickable(haptic = false) {
+                            if (!selected) haptics.tick()
+                            onSelect(index)
+                        }
+                        .semantics {
+                            this.selected = selected
+                            role = Role.Tab
+                        },
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -225,35 +288,37 @@ fun SegmentedControl(
 @Composable
 fun ChoicePill(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val border by animateColorAsState(
-        if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+        if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
         motionTween(),
         label = "pillBorder",
     )
     val background by animateColorAsState(
-        if (selected) YtTheme.colors.tonal else MaterialTheme.colorScheme.surface,
+        if (selected) YtTheme.colors.tonal else YtTheme.colors.surfaceHigh,
         motionTween(),
         label = "pillBackground",
     )
     val content by animateColorAsState(
-        if (selected) YtTheme.colors.goldText else MaterialTheme.colorScheme.onSurface,
+        if (selected) YtTheme.colors.accentText else MaterialTheme.colorScheme.onSurface,
         motionTween(),
         label = "pillText",
     )
     Box(
         modifier = modifier
-            .height(YtDimens.MinTouch)
-            .ytClickable(onClick = onClick)
+            .height(YtDimens.MinTouch - 4.dp)
             .clip(PillShape)
+            .ytClickable(onClick = onClick)
             .background(background)
-            .border(YtDimens.Hairline, border, PillShape),
+            .border(1.5.dp, border, PillShape)
+            .semantics { this.selected = selected },
         contentAlignment = Alignment.Center,
     ) {
         Text(text, style = MaterialTheme.typography.labelLarge, color = content)
     }
 }
 
+// the main action on a screen, amber
 @Composable
-fun GoldButton(
+fun PrimaryButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -273,10 +338,11 @@ fun GoldButton(
         enabled = enabled,
         shape = PillShape,
         interactionSource = source,
+        contentPadding = PaddingValues(horizontal = 24.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = MaterialTheme.colorScheme.primary,
             contentColor = MaterialTheme.colorScheme.onPrimary,
-            disabledContainerColor = YtTheme.colors.tonal,
+            disabledContainerColor = YtTheme.colors.surfaceHigh,
             disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         ),
     ) {
@@ -284,12 +350,13 @@ fun GoldButton(
             YtIcon(icon)
             Spacer(Modifier.width(10.dp))
         }
-        Text(text, style = MaterialTheme.typography.titleMedium)
+        Text(text, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
+// strong but not the main action, ink colored
 @Composable
-fun InkButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun InkButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, icon: Int? = null) {
     val source = remember { MutableInteractionSource() }
     val haptics = rememberHaptics()
     Button(
@@ -307,20 +374,27 @@ fun InkButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) 
             contentColor = MaterialTheme.colorScheme.onSecondary,
         ),
     ) {
-        Text(text, style = MaterialTheme.typography.titleMedium)
+        if (icon != null) {
+            YtIcon(icon)
+            Spacer(Modifier.width(10.dp))
+        }
+        Text(text, style = MaterialTheme.typography.titleMedium, maxLines = 1)
     }
 }
 
+// quiet button on a soft fill
 @Composable
-fun OutlinePillButton(
+fun SecondaryButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    icon: Int? = null,
+    contentColor: Color = MaterialTheme.colorScheme.onSurface,
 ) {
     val source = remember { MutableInteractionSource() }
     val haptics = rememberHaptics()
-    OutlinedButton(
+    Button(
         onClick = {
             haptics.tick()
             onClick()
@@ -331,90 +405,126 @@ fun OutlinePillButton(
         enabled = enabled,
         shape = PillShape,
         interactionSource = source,
-        border = BorderStroke(YtDimens.Hairline, MaterialTheme.colorScheme.outline),
-        colors = ButtonDefaults.outlinedButtonColors(
-            containerColor = MaterialTheme.colorScheme.surface,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            disabledContainerColor = MaterialTheme.colorScheme.surface,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = YtTheme.colors.surfaceHigh,
+            contentColor = contentColor,
+            disabledContainerColor = YtTheme.colors.surfaceHigh,
             disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         ),
     ) {
-        Text(text, style = MaterialTheme.typography.titleMedium)
+        if (icon != null) {
+            YtIcon(icon)
+            Spacer(Modifier.width(10.dp))
+        }
+        Text(text, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
 @Composable
-fun YtProgressBar(progress: Float, modifier: Modifier = Modifier) {
+fun YtProgressBar(progress: Float, modifier: Modifier = Modifier, height: Dp = 6.dp) {
     val animated by rememberAnimatedProgress(progress)
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(6.dp)
+            .height(height)
             .clip(PillShape)
             .background(YtTheme.colors.track),
     ) {
         Box(
             Modifier
                 .fillMaxWidth(animated)
-                .height(6.dp)
+                .height(height)
                 .background(MaterialTheme.colorScheme.primary, PillShape),
         )
     }
 }
 
+// one saved file: cover, title, artist and details, and a menu with share and delete
 @Composable
 fun DownloadRow(
     item: DownloadItem,
     modifier: Modifier = Modifier,
-    onShare: (() -> Unit)? = null,
+    playing: Boolean = false,
     onClick: (() -> Unit)? = null,
+    onShare: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null,
 ) {
-    YtCard(modifier = modifier.fillMaxWidth().then(if (onClick != null) Modifier.ytClickable(onClick = onClick) else Modifier)) {
-        Row(
-            modifier = Modifier.padding(
-                start = 10.dp,
-                top = 10.dp,
-                bottom = 10.dp,
-                end = if (onShare != null) 6.dp else 14.dp,
-            ),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.small)
+            .then(if (onClick != null) Modifier.ytClickable(pressedScale = 0.98f, onClick = onClick) else Modifier)
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Artwork(item.uri, item.format, Modifier.size(YtDimens.RowArt))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(
+                item.title,
+                style = MaterialTheme.typography.titleSmall,
+                color = if (playing) YtTheme.colors.accentText else MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                listOfNotNull(item.artist?.takeIf { it.isNotBlank() }, item.meta).joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (onShare != null || onDelete != null) {
+            RowMenu(onShare = onShare, onDelete = onDelete)
+        }
+    }
+}
+
+@Composable
+private fun RowMenu(onShare: (() -> Unit)?, onDelete: (() -> Unit)?) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        RoundIconButton(R.drawable.ic_more, "More options", onClick = { open = true })
+        DropdownMenu(
+            expanded = open,
+            onDismissRequest = { open = false },
+            shape = MaterialTheme.shapes.small,
+            containerColor = YtTheme.colors.surfaceHigh,
         ) {
-            IconTile(item.format.icon)
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    item.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (!item.artist.isNullOrBlank()) {
-                    Text(
-                        item.artist,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = YtTheme.colors.goldText,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Text(
-                    item.meta,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+            if (onShare != null) {
+                DropdownMenuItem(
+                    text = { Text("Share", style = MaterialTheme.typography.bodyLarge) },
+                    leadingIcon = { YtIcon(R.drawable.ic_share) },
+                    onClick = {
+                        open = false
+                        onShare()
+                    },
                 )
             }
-            if (onShare != null) {
-                RoundIconButton(R.drawable.ic_share, "Share", onShare)
+            if (onDelete != null) {
+                DropdownMenuItem(
+                    text = { Text("Delete", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.error) },
+                    leadingIcon = { YtIcon(R.drawable.ic_delete, tint = MaterialTheme.colorScheme.error) },
+                    onClick = {
+                        open = false
+                        onDelete()
+                    },
+                )
             }
         }
     }
 }
 
 @Composable
-fun RoundIconButton(@DrawableRes icon: Int, description: String, onClick: () -> Unit) {
+fun RoundIconButton(
+    @DrawableRes icon: Int,
+    description: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    background: Color = Color.Transparent,
+) {
     val source = remember { MutableInteractionSource() }
     val haptics = rememberHaptics()
     IconButton(
@@ -422,12 +532,13 @@ fun RoundIconButton(@DrawableRes icon: Int, description: String, onClick: () -> 
             haptics.tick()
             onClick()
         },
-        modifier = Modifier
+        modifier = modifier
             .size(YtDimens.MinTouch)
-            .pressScale(source),
+            .pressScale(source)
+            .background(background, PillShape),
         interactionSource = source,
     ) {
-        YtIcon(icon, tint = MaterialTheme.colorScheme.onSurfaceVariant, contentDescription = description)
+        YtIcon(icon, tint = tint, contentDescription = description)
     }
 }
 
@@ -441,11 +552,6 @@ fun QueueJobCard(
     modifier: Modifier = Modifier,
 ) {
     val failed = job.status == JobStatus.Failed
-    val border = when {
-        failed -> MaterialTheme.colorScheme.error
-        job.status == JobStatus.Running -> MaterialTheme.colorScheme.primary
-        else -> MaterialTheme.colorScheme.outline
-    }
     val statusText = when {
         failed -> job.error ?: "Something went wrong."
         job.status == JobStatus.Queued && job.waitingForWifi -> "Waiting for Wi-Fi"
@@ -455,19 +561,22 @@ fun QueueJobCard(
         job.step == JobStep.Converting -> "Converting"
         else -> "Saving to your phone"
     }.let { text -> if (!failed && !job.artist.isNullOrBlank()) "${job.artist} · $text" else text }
-    YtCard(modifier = modifier.fillMaxWidth().animateContentSize(motionSpring()), borderColor = border) {
+    YtCard(
+        modifier = modifier.fillMaxWidth().animateContentSize(motionSpring()),
+        borderColor = if (failed) MaterialTheme.colorScheme.error.copy(alpha = 0.6f) else MaterialTheme.colorScheme.outline,
+    ) {
         Column(
-            modifier = Modifier.padding(start = 10.dp, top = 10.dp, end = 6.dp, bottom = if (failed) 10.dp else 14.dp),
+            modifier = Modifier.padding(start = 12.dp, top = 12.dp, end = 6.dp, bottom = if (failed) 12.dp else 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                IconTile(job.format.icon)
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                RemoteArtwork(job.thumbnailUrl, job.format, Modifier.size(48.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(
-                        job.title,
+                        if (job.title == job.url) "Getting the title" else job.title,
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
@@ -478,7 +587,7 @@ fun QueueJobCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = when {
                             failed -> MaterialTheme.colorScheme.error
-                            job.status == JobStatus.Running -> YtTheme.colors.goldText
+                            job.status == JobStatus.Running -> YtTheme.colors.accentText
                             else -> MaterialTheme.colorScheme.onSurfaceVariant
                         },
                         // show the whole error when it failed so its possible to see what went wrong
@@ -487,15 +596,45 @@ fun QueueJobCard(
                     )
                 }
                 if (failed) {
-                    RoundIconButton(R.drawable.ic_retry, "Try again", onRetry)
+                    RoundIconButton(R.drawable.ic_retry, "Try again", onRetry, tint = YtTheme.colors.accentText)
                     RoundIconButton(R.drawable.ic_close, "Dismiss", onDismiss)
                 } else {
                     RoundIconButton(R.drawable.ic_close, "Cancel", onCancel)
                 }
             }
             if (!failed) {
-                YtProgressBar(job.progress, Modifier.padding(start = 4.dp, end = 8.dp))
+                YtProgressBar(job.progress, Modifier.padding(start = 2.dp, end = 10.dp), height = 4.dp)
             }
+        }
+    }
+}
+
+// a friendly message for an empty list, with an optional button
+@Composable
+fun EmptyState(
+    @DrawableRes icon: Int,
+    title: String,
+    body: String,
+    modifier: Modifier = Modifier,
+    actionLabel: String? = null,
+    onAction: () -> Unit = {},
+) {
+    Column(
+        modifier = modifier.fillMaxWidth().padding(vertical = 32.dp, horizontal = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        IconTile(icon, size = 64.dp)
+        Spacer(Modifier.height(4.dp))
+        Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onBackground)
+        Text(
+            body,
+            style = MaterialTheme.typography.bodyMedium.copy(textAlign = TextAlign.Center),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (actionLabel != null) {
+            Spacer(Modifier.height(6.dp))
+            SecondaryButton(actionLabel, onClick = onAction, contentColor = YtTheme.colors.accentText)
         }
     }
 }
@@ -505,26 +644,32 @@ fun QueueJobCard(
 fun ToastPill(text: String, actionLabel: String?, onAction: () -> Unit, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier
+            .shadow(12.dp, PillShape, ambientColor = Color.Black, spotColor = Color.Black)
             .background(MaterialTheme.colorScheme.secondary, PillShape)
-            .height(48.dp)
-            .padding(start = 20.dp, end = if (actionLabel != null) 8.dp else 20.dp),
+            .height(52.dp)
+            .padding(start = 20.dp, end = if (actionLabel != null) 6.dp else 20.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(text, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSecondary)
+        Text(
+            text,
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
+        )
         if (actionLabel != null) {
             Box(
                 modifier = Modifier
-                    .height(YtDimens.MinTouch)
+                    .height(40.dp)
+                    .clip(PillShape)
                     .ytClickable(onClick = onAction)
-                    .padding(horizontal = 12.dp),
+                    .background(MaterialTheme.colorScheme.primary, PillShape)
+                    .padding(horizontal = 16.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    actionLabel.uppercase(),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSecondary,
-                )
+                Text(actionLabel, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimary)
             }
         }
     }
@@ -553,25 +698,49 @@ fun ToastHost(
 
 enum class Tab { Download, Library, Settings }
 
+// floating pill nav bar, the soft amber pill slides to the open tab.
+// badge shows how many downloads are running on the library tab
 @Composable
-fun YtBottomBar(selected: Tab, onSelect: (Tab) -> Unit, modifier: Modifier = Modifier) {
-    Column(modifier = modifier.background(MaterialTheme.colorScheme.background)) {
-        HorizontalDivider(thickness = YtDimens.Hairline, color = MaterialTheme.colorScheme.outline)
-        Row(
+fun YtBottomBar(selected: Tab, onSelect: (Tab) -> Unit, modifier: Modifier = Modifier, badge: Int = 0) {
+    val tabs = listOf(
+        Triple(Tab.Download, "Download", R.drawable.ic_download),
+        Triple(Tab.Library, "Library", R.drawable.ic_folder),
+        Triple(Tab.Settings, "Settings", R.drawable.ic_settings),
+    )
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 24.dp, vertical = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        BoxWithConstraints(
             modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                .shadow(20.dp, PillShape, ambientColor = Color.Black, spotColor = Color.Black)
+                .background(YtTheme.colors.surfaceHigh, PillShape)
+                .border(YtDimens.Hairline, MaterialTheme.colorScheme.outline, PillShape)
+                .padding(6.dp),
         ) {
-            BottomBarItem("Download", R.drawable.ic_download, selected == Tab.Download, Modifier.weight(1f)) {
-                onSelect(Tab.Download)
-            }
-            BottomBarItem("Library", R.drawable.ic_folder, selected == Tab.Library, Modifier.weight(1f)) {
-                onSelect(Tab.Library)
-            }
-            BottomBarItem("Settings", R.drawable.ic_settings, selected == Tab.Settings, Modifier.weight(1f)) {
-                onSelect(Tab.Settings)
+            val itemWidth = maxWidth / tabs.size
+            val index = tabs.indexOfFirst { it.first == selected }
+            val x by animateDpAsState(itemWidth * index, motionSpring(), label = "navIndicator")
+            Box(
+                Modifier
+                    .offset(x = x)
+                    .width(itemWidth)
+                    .height(52.dp)
+                    .background(YtTheme.colors.tonal, PillShape),
+            )
+            Row {
+                tabs.forEach { (tab, label, icon) ->
+                    BottomBarItem(
+                        label = label,
+                        icon = icon,
+                        selected = tab == selected,
+                        badge = if (tab == Tab.Library) badge else 0,
+                        modifier = Modifier.width(itemWidth),
+                    ) { onSelect(tab) }
+                }
             }
         }
     }
@@ -582,24 +751,48 @@ private fun BottomBarItem(
     label: String,
     icon: Int,
     selected: Boolean,
+    badge: Int,
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
     val color by animateColorAsState(
-        if (selected) YtTheme.colors.goldText else MaterialTheme.colorScheme.onSurfaceVariant,
+        if (selected) YtTheme.colors.accentText else MaterialTheme.colorScheme.onSurfaceVariant,
         motionTween(),
         label = "tabColor",
     )
     Column(
         modifier = modifier
-            .height(48.dp)
+            .height(52.dp)
+            .clip(PillShape)
             .ytClickable(onClick = onClick)
-            .clip(PillShape),
+            .semantics(mergeDescendants = true) {
+                this.selected = selected
+                role = Role.Tab
+                if (badge > 0) contentDescription = "$label, $badge downloading"
+            },
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        YtIcon(icon, tint = color, size = 22.dp)
-        Spacer(Modifier.height(4.dp))
+        Box {
+            YtIcon(icon, tint = color, size = 22.dp)
+            if (badge > 0) {
+                Box(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(x = 6.dp, y = (-4).dp)
+                        .size(16.dp)
+                        .background(MaterialTheme.colorScheme.primary, PillShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        if (badge > 9) "9+" else badge.toString(),
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(3.dp))
         Text(label, style = MaterialTheme.typography.labelSmall, color = color)
     }
 }

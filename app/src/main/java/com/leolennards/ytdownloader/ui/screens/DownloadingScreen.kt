@@ -37,17 +37,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.leolennards.ytdownloader.R
+import com.leolennards.ytdownloader.data.DownloadItem
 import com.leolennards.ytdownloader.data.JobStatus
 import com.leolennards.ytdownloader.data.MediaFormat
 import com.leolennards.ytdownloader.data.QueueJob
-import com.leolennards.ytdownloader.ui.components.IconTile
+import com.leolennards.ytdownloader.ui.components.EyebrowLabel
 import com.leolennards.ytdownloader.ui.components.InkButton
-import com.leolennards.ytdownloader.ui.components.OutlinePillButton
-import com.leolennards.ytdownloader.ui.components.ScreenHeader
-import com.leolennards.ytdownloader.ui.components.YtCard
+import com.leolennards.ytdownloader.ui.components.PrimaryButton
+import com.leolennards.ytdownloader.ui.components.RemoteArtwork
+import com.leolennards.ytdownloader.ui.components.SecondaryButton
+import com.leolennards.ytdownloader.ui.components.TextAction
 import com.leolennards.ytdownloader.ui.components.YtIcon
 import com.leolennards.ytdownloader.ui.theme.LocalMotionEnabled
 import com.leolennards.ytdownloader.ui.theme.PillShape
@@ -56,13 +59,11 @@ import com.leolennards.ytdownloader.ui.theme.YtTheme
 import com.leolennards.ytdownloader.ui.theme.motionSpring
 import com.leolennards.ytdownloader.ui.theme.motionTween
 import com.leolennards.ytdownloader.ui.theme.rememberAnimatedProgress
-import com.leolennards.ytdownloader.ui.theme.staggeredEntrance
-import com.leolennards.ytdownloader.ui.theme.ytClickable
 import com.leolennards.ytdownloader.ui.theme.ytEnter
 import com.leolennards.ytdownloader.ui.theme.ytExit
 import kotlin.math.roundToInt
 
-private val Steps = listOf("Fetching video info", "Downloading", "Converting", "Saving to your phone")
+private val Steps = listOf("Details", "Download", "Convert", "Save")
 
 private enum class StepState { Done, Current, Pending }
 
@@ -72,6 +73,7 @@ fun DownloadingScreen(
     onCancel: () -> Unit,
     onAddAnother: () -> Unit,
     onViewLibrary: () -> Unit,
+    onPlay: (DownloadItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val failed = job?.status == JobStatus.Failed
@@ -89,12 +91,14 @@ fun DownloadingScreen(
         else -> job.step.ordinal
     }
     val format = job?.format ?: MediaFormat.MP4
-    val title = job?.title ?: "Video"
-    val meta = when {
+    val title = job?.title?.takeIf { it != job.url } ?: "Getting the title"
+    val status = when {
         job == null -> ""
-        done -> job.result?.meta ?: ""
+        done -> "Saved to your phone"
+        failed -> "Download failed"
+        job.waitingForWifi -> "Waiting for Wi-Fi"
         job.status == JobStatus.Queued -> "Waiting for a free slot"
-        else -> listOfNotNull(job.format.label, job.quality).joinToString(" · ")
+        else -> listOf("Getting the details", "Downloading", "Converting", "Saving to your phone")[job.step.ordinal]
     }
 
     Column(modifier = modifier.fillMaxSize()) {
@@ -104,78 +108,81 @@ fun DownloadingScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = YtDimens.ScreenPadding)
                 .padding(top = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(YtDimens.SectionGap),
         ) {
-            ScreenHeader(
-                eyebrow = when {
+            EyebrowLabel(
+                when {
                     done -> "Finished"
                     failed -> "Problem"
                     else -> "In progress"
                 },
-                title = when {
-                    done -> "Saved"
-                    failed -> "Download failed"
-                    else -> "Downloading"
-                },
-                subtitle = when {
-                    done -> "Your file is in the library."
-                    failed -> job?.error ?: "Something went wrong."
-                    else -> "You can leave this screen. It keeps going in the background."
-                },
             )
 
-            AnimatedVisibility(visible = !failed, enter = ytEnter(), exit = ytExit()) {
-                Column(verticalArrangement = Arrangement.spacedBy(YtDimens.SectionGap)) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp)
-                            .staggeredEntrance(0, "downloading-ring"),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        ProgressRing(progress, done)
-                    }
+            // the artwork inside the progress ring
+            ArtRing(progress = progress, done = done, failed = failed) {
+                RemoteArtwork(
+                    job?.thumbnailUrl,
+                    format,
+                    Modifier.fillMaxSize(),
+                    shape = PillShape,
+                    loadSize = 400.dp,
+                )
+            }
 
-                    YtCard(Modifier.fillMaxWidth()) {
-                        Row(
-                            modifier = Modifier.padding(start = 10.dp, top = 10.dp, bottom = 10.dp, end = 14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(14.dp),
-                        ) {
-                            IconTile(format.icon)
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text(
-                                    if (title == job?.url) "Getting the title" else title,
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                                Text(
-                                    meta,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                    }
-
-                    YtCard(Modifier.fillMaxWidth()) {
-                        Column(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 18.dp),
-                            verticalArrangement = Arrangement.spacedBy(16.dp),
-                        ) {
-                            Steps.forEachIndexed { index, label ->
-                                val state = when {
-                                    index < current -> StepState.Done
-                                    index == current -> StepState.Current
-                                    else -> StepState.Pending
-                                }
-                                StepRow(label, state)
-                            }
-                        }
-                    }
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.headlineSmall.copy(textAlign = TextAlign.Center),
+                    color = MaterialTheme.colorScheme.onBackground,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                val subtitle = listOfNotNull(job?.artist?.takeIf { it.isNotBlank() }, job?.format?.label, job?.quality)
+                    .joinToString(" · ")
+                if (subtitle.isNotBlank()) {
+                    Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+            }
+
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                val animated by rememberAnimatedProgress(progress)
+                if (!failed) {
+                    Text(
+                        "${(animated * 100).roundToInt()}%",
+                        style = MaterialTheme.typography.displayLarge,
+                        color = if (done) YtTheme.colors.success else MaterialTheme.colorScheme.onBackground,
+                    )
+                }
+                Text(
+                    status,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = when {
+                        failed -> MaterialTheme.colorScheme.error
+                        done -> YtTheme.colors.success
+                        else -> YtTheme.colors.accentText
+                    },
+                )
+                if (failed) {
+                    Text(
+                        job?.error ?: "Something went wrong.",
+                        style = MaterialTheme.typography.bodySmall.copy(textAlign = TextAlign.Center),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                }
+            }
+
+            AnimatedVisibility(visible = !failed, enter = ytEnter(), exit = ytExit()) {
+                Stepper(current)
+            }
+
+            AnimatedVisibility(visible = active, enter = ytEnter(), exit = ytExit()) {
+                Text(
+                    "You can leave this screen, it keeps going in the background.",
+                    style = MaterialTheme.typography.bodySmall.copy(textAlign = TextAlign.Center),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
 
@@ -183,77 +190,140 @@ fun DownloadingScreen(
             modifier = Modifier
                 .navigationBarsPadding()
                 .padding(horizontal = YtDimens.ScreenPadding, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            AnimatedVisibility(visible = active, enter = ytEnter(), exit = ytExit()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(YtDimens.MinTouch)
-                        .ytClickable(onClick = onCancel),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        "Cancel this download",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+            val result = job?.result
+            AnimatedVisibility(visible = done && result != null, enter = ytEnter(), exit = ytExit()) {
+                PrimaryButton(
+                    "Play it now",
+                    onClick = { result?.let(onPlay) },
+                    icon = R.drawable.ic_play,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinePillButton("Add another", onClick = onAddAnother, modifier = Modifier.weight(1f))
-                InkButton("View library", onClick = onViewLibrary, modifier = Modifier.weight(1f))
+                SecondaryButton("Add another", onClick = onAddAnother, modifier = Modifier.weight(1f))
+                InkButton("Library", onClick = onViewLibrary, modifier = Modifier.weight(1f))
+            }
+            AnimatedVisibility(visible = active, enter = ytEnter(), exit = ytExit()) {
+                TextAction("Cancel this download", onCancel, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+// a round picture with the progress drawn around it
+@Composable
+private fun ArtRing(progress: Float, done: Boolean, failed: Boolean, content: @Composable () -> Unit) {
+    val animated by rememberAnimatedProgress(progress)
+    val track = YtTheme.colors.track
+    val color by animateColorAsState(
+        when {
+            failed -> MaterialTheme.colorScheme.error
+            done -> YtTheme.colors.success
+            else -> MaterialTheme.colorScheme.primary
+        },
+        motionTween(),
+        label = "ringColor",
+    )
+    val scale by animateFloatAsState(if (done) 1.04f else 1f, motionSpring(dampingRatio = 0.5f), label = "ringPop")
+    Box(
+        modifier = Modifier
+            .size(236.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.fillMaxSize()) {
+            val stroke = 8.dp.toPx()
+            val topLeft = Offset(stroke / 2, stroke / 2)
+            val arcSize = Size(size.width - stroke, size.height - stroke)
+            drawArc(track, -90f, 360f, false, topLeft, arcSize, style = Stroke(stroke))
+            drawArc(
+                color,
+                -90f,
+                360f * (if (failed) 1f else animated),
+                false,
+                topLeft,
+                arcSize,
+                style = Stroke(stroke, cap = StrokeCap.Round),
+            )
+        }
+        Box(Modifier.size(196.dp).clip(PillShape)) {
+            content()
+            if (done) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.35f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        Modifier
+                            .size(56.dp)
+                            .background(YtTheme.colors.success, PillShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        YtIcon(R.drawable.ic_check, tint = Color.Black, size = 28.dp, contentDescription = "Done")
+                    }
+                }
+            }
+        }
+    }
+}
+
+// four dots joined by lines, with the step names under them
+@Composable
+private fun Stepper(current: Int) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Steps.forEachIndexed { index, label ->
+            val state = when {
+                index < current -> StepState.Done
+                index == current -> StepState.Current
+                else -> StepState.Pending
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    StepLine(visible = index > 0, lit = index <= current, modifier = Modifier.weight(1f))
+                    StepDot(state)
+                    StepLine(visible = index < Steps.lastIndex, lit = index < current, modifier = Modifier.weight(1f))
+                }
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (state == StepState.Pending) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun ProgressRing(progress: Float, done: Boolean) {
-    val animated by rememberAnimatedProgress(progress)
-    val track = YtTheme.colors.track
-    val gold = MaterialTheme.colorScheme.primary
-    Box(modifier = Modifier.size(220.dp), contentAlignment = Alignment.Center) {
-        Canvas(Modifier.fillMaxSize()) {
-            val stroke = 10.dp.toPx()
-            val topLeft = Offset(stroke / 2, stroke / 2)
-            val arcSize = Size(size.width - stroke, size.height - stroke)
-            drawArc(
-                color = track,
-                startAngle = -90f,
-                sweepAngle = 360f,
-                useCenter = false,
-                topLeft = topLeft,
-                size = arcSize,
-                style = Stroke(width = stroke),
-            )
-            drawArc(
-                color = gold,
-                startAngle = -90f,
-                sweepAngle = 360f * animated,
-                useCenter = false,
-                topLeft = topLeft,
-                size = arcSize,
-                style = Stroke(width = stroke, cap = StrokeCap.Round),
-            )
-        }
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                "${(animated * 100).roundToInt()}%",
-                style = MaterialTheme.typography.displayLarge,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-            Text(
-                if (done) "Complete" else "Downloading",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
+private fun StepLine(visible: Boolean, lit: Boolean, modifier: Modifier) {
+    val color by animateColorAsState(
+        when {
+            !visible -> Color.Transparent
+            lit -> MaterialTheme.colorScheme.primary
+            else -> YtTheme.colors.track
+        },
+        motionTween(),
+        label = "stepLine",
+    )
+    Box(modifier.height(2.dp).background(color))
 }
 
 @Composable
-private fun StepRow(label: String, state: StepState) {
+private fun StepDot(state: StepState) {
     val motion = LocalMotionEnabled.current
     val fill by animateColorAsState(
         when (state) {
@@ -265,10 +335,7 @@ private fun StepRow(label: String, state: StepState) {
         label = "stepFill",
     )
     val ring by animateColorAsState(
-        when (state) {
-            StepState.Pending -> MaterialTheme.colorScheme.outline
-            else -> MaterialTheme.colorScheme.primary
-        },
+        if (state == StepState.Pending) YtTheme.colors.track else MaterialTheme.colorScheme.primary,
         motionTween(),
         label = "stepRing",
     )
@@ -277,44 +344,31 @@ private fun StepRow(label: String, state: StepState) {
         animationSpec = motionSpring(dampingRatio = 0.55f),
         label = "stepCheck",
     )
-    val text by animateColorAsState(
-        if (state == StepState.Current) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-        motionTween(),
-        label = "stepText",
-    )
-    // current step pulses so you can tell its working
+    // the current step pulses so you can tell its working
     val pulse by rememberInfiniteTransition(label = "stepPulse").animateFloat(
-        initialValue = 0.5f,
+        initialValue = 0.45f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(tween(900, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "stepPulseValue",
     )
-
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Box(
-            modifier = Modifier
-                .size(24.dp)
-                .graphicsLayer { alpha = if (state == StepState.Current && motion) pulse else 1f }
-                .clip(PillShape)
-                .background(fill)
-                .border(2.dp, ring, PillShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            YtIcon(
-                R.drawable.ic_check,
-                tint = MaterialTheme.colorScheme.onPrimary,
-                size = 14.dp,
-                modifier = Modifier.graphicsLayer {
-                    scaleX = check
-                    scaleY = check
-                    alpha = check.coerceIn(0f, 1f)
-                },
-            )
-        }
-        Text(
-            label,
-            style = if (state == StepState.Current) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyMedium,
-            color = text,
+    Box(
+        modifier = Modifier
+            .size(24.dp)
+            .graphicsLayer { alpha = if (state == StepState.Current && motion) pulse else 1f }
+            .clip(PillShape)
+            .background(fill)
+            .border(2.dp, ring, PillShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        YtIcon(
+            R.drawable.ic_check,
+            tint = MaterialTheme.colorScheme.onPrimary,
+            size = 14.dp,
+            modifier = Modifier.graphicsLayer {
+                scaleX = check
+                scaleY = check
+                alpha = check.coerceIn(0f, 1f)
+            },
         )
     }
 }

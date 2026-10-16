@@ -1,18 +1,19 @@
 package com.leolennards.ytdownloader.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.border
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -25,11 +26,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.leolennards.ytdownloader.data.SettingsState
 import com.leolennards.ytdownloader.ui.components.ChoicePill
-import com.leolennards.ytdownloader.ui.components.OutlinePillButton
+import com.leolennards.ytdownloader.ui.components.EyebrowLabel
 import com.leolennards.ytdownloader.ui.components.ScreenHeader
+import com.leolennards.ytdownloader.ui.components.SecondaryButton
 import com.leolennards.ytdownloader.ui.components.SegmentOption
 import com.leolennards.ytdownloader.ui.components.SegmentedControl
 import com.leolennards.ytdownloader.ui.components.YtCard
@@ -37,17 +42,95 @@ import com.leolennards.ytdownloader.ui.theme.YtDimens
 import com.leolennards.ytdownloader.ui.theme.YtTheme
 import com.leolennards.ytdownloader.ui.theme.rememberHaptics
 import com.leolennards.ytdownloader.ui.theme.staggeredEntrance
+import com.leolennards.ytdownloader.ui.theme.ytClickable
 import com.leolennards.ytdownloader.ui.theme.ytEnter
 import com.leolennards.ytdownloader.ui.theme.ytExit
 
-// small grey title above an option
+// a titled group of settings in one card, rows split by thin lines
 @Composable
-private fun OptionLabel(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+private fun SettingsGroup(
+    title: String,
+    index: Int,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(
+        modifier = modifier.staggeredEntrance(index, "settings-$title"),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        EyebrowLabel(title, Modifier.padding(start = 4.dp))
+        YtCard(Modifier.fillMaxWidth(), content = content)
+    }
+}
+
+@Composable
+private fun GroupDivider() {
+    HorizontalDivider(
+        thickness = YtDimens.Hairline,
+        color = MaterialTheme.colorScheme.outline,
+        modifier = Modifier.padding(horizontal = YtDimens.CardPadding),
     )
+}
+
+// one block inside a group: a title, an optional line under it, and the control
+@Composable
+private fun SettingBlock(
+    title: String,
+    description: String? = null,
+    content: (@Composable ColumnScope.() -> Unit)? = null,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(YtDimens.CardPadding),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+            if (description != null) {
+                Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        content?.invoke(this)
+    }
+}
+
+// a whole row that flips a switch, so the text is tappable too
+@Composable
+private fun SwitchRow(title: String, description: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    val haptics = rememberHaptics()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .ytClickable(haptic = false, pressedScale = 0.99f) {
+                haptics.tick()
+                onChange(!checked)
+            }
+            .semantics { role = Role.Switch }
+            .padding(YtDimens.CardPadding),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+            Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = {
+                haptics.tick()
+                onChange(it)
+            },
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                checkedTrackColor = MaterialTheme.colorScheme.primary,
+                checkedBorderColor = MaterialTheme.colorScheme.primary,
+                uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                uncheckedTrackColor = YtTheme.colors.track,
+                uncheckedBorderColor = YtTheme.colors.track,
+            ),
+        )
+    }
 }
 
 // row of pills for choosing a video quality
@@ -78,7 +161,6 @@ fun SettingsScreen(
     onClearCookies: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    val haptics = rememberHaptics()
     // the folder name is kept here while typing, so the cursor does not jump
     var folder by remember { mutableStateOf(settings.folderName) }
     val folderShown = folder.trim().ifBlank { "Downloader" }
@@ -88,46 +170,28 @@ fun SettingsScreen(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = YtDimens.ScreenPadding)
-            .padding(top = 24.dp, bottom = 16.dp),
+            .padding(top = 24.dp, bottom = YtDimens.NavBarClearance),
         verticalArrangement = Arrangement.spacedBy(YtDimens.SectionGap),
     ) {
         ScreenHeader(
             eyebrow = "Preferences",
             title = "Settings",
-            subtitle = "Choose how the app behaves.",
+            subtitle = "Make AnyGrab work the way you like.",
             modifier = Modifier.staggeredEntrance(0, "settings-0"),
         )
 
-        // ---- light or dark ----
-        YtCard(Modifier.fillMaxWidth().staggeredEntrance(1, "settings-theme")) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text(
-                    "Appearance",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
+        SettingsGroup("Appearance", 1) {
+            SettingBlock("Theme", "System follows your phone's setting.") {
                 SegmentedControl(
                     options = listOf(SegmentOption("System"), SegmentOption("Light"), SegmentOption("Dark")),
                     selectedIndex = settings.themeMode,
                     onSelect = { onChange(settings.copy(themeMode = it)) },
                 )
-                Text(
-                    "System follows your phone's setting.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
         }
 
-        // ---- defaults for new downloads ----
-        YtCard(Modifier.fillMaxWidth().staggeredEntrance(1, "settings-1")) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text(
-                    "New downloads",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                OptionLabel("Default format")
+        SettingsGroup("New downloads", 2) {
+            SettingBlock("Default format", "What the paste screen starts with. You can still change it there.") {
                 SegmentedControl(
                     options = FormatOptions,
                     selectedIndex = settings.defaultFormatIndex,
@@ -135,87 +199,48 @@ fun SettingsScreen(
                 )
                 AnimatedVisibility(visible = settings.defaultFormatIndex == 1, enter = ytEnter(), exit = ytExit()) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        OptionLabel("Default video quality")
+                        Text(
+                            "Video quality when you skip the preview",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                         QualityPills(settings.defaultHeight) { onChange(settings.copy(defaultHeight = it)) }
                     }
                 }
-                Text(
-                    "Used when you add links from the paste screen. You can still change the format there.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
-        }
-
-        // ---- shared links ----
-        YtCard(Modifier.fillMaxWidth().staggeredEntrance(2, "settings-2")) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+            GroupDivider()
+            SwitchRow(
+                "Download shared links",
+                "When you share a link to AnyGrab from another app, it downloads straight away.",
+                settings.autoDownloadShares,
+            ) { onChange(settings.copy(autoDownloadShares = it)) }
+            AnimatedVisibility(visible = settings.autoDownloadShares, enter = ytEnter(), exit = ytExit()) {
+                Column(
+                    modifier = Modifier.padding(start = YtDimens.CardPadding, end = YtDimens.CardPadding, bottom = YtDimens.CardPadding),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            "Download shared links",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Text(
-                            "When you share a link to AnyGrab from another app, it downloads straight away.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(
-                        checked = settings.autoDownloadShares,
-                        onCheckedChange = {
-                            haptics.tick()
-                            onChange(settings.copy(autoDownloadShares = it))
-                        },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-                            checkedTrackColor = MaterialTheme.colorScheme.primary,
-                            checkedBorderColor = MaterialTheme.colorScheme.primary,
-                            uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            uncheckedTrackColor = YtTheme.colors.track,
-                            uncheckedBorderColor = MaterialTheme.colorScheme.outline,
-                        ),
+                    SegmentedControl(
+                        options = FormatOptions,
+                        selectedIndex = settings.shareFormatIndex,
+                        onSelect = { onChange(settings.copy(shareFormatIndex = it)) },
                     )
-                }
-
-                AnimatedVisibility(visible = settings.autoDownloadShares, enter = ytEnter(), exit = ytExit()) {
-                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                        OptionLabel("Format for shared links")
-                        SegmentedControl(
-                            options = FormatOptions,
-                            selectedIndex = settings.shareFormatIndex,
-                            onSelect = { onChange(settings.copy(shareFormatIndex = it)) },
-                        )
-                        AnimatedVisibility(visible = settings.shareFormatIndex == 1, enter = ytEnter(), exit = ytExit()) {
-                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                OptionLabel("Video quality")
-                                QualityPills(settings.shareHeight) { onChange(settings.copy(shareHeight = it)) }
-                            }
-                        }
+                    AnimatedVisibility(visible = settings.shareFormatIndex == 1, enter = ytEnter(), exit = ytExit()) {
+                        QualityPills(settings.shareHeight) { onChange(settings.copy(shareHeight = it)) }
                     }
                 }
             }
         }
 
-        // ---- where files go and how fast ----
-        YtCard(Modifier.fillMaxWidth().staggeredEntrance(3, "settings-3")) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text(
-                    "Saving",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                OptionLabel("Folder name")
+        SettingsGroup("Saving", 3) {
+            SettingBlock(
+                "Folder name",
+                "Music goes in Music / $folderShown and videos in Movies / $folderShown. Files you already saved stay where they are.",
+            ) {
                 Box(
                     Modifier
                         .fillMaxWidth()
-                        .border(YtDimens.Hairline, MaterialTheme.colorScheme.outline, RoundedCornerShape(14.dp))
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                        .background(YtTheme.colors.surfaceHigh, MaterialTheme.shapes.small)
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
                 ) {
                     BasicTextField(
                         value = folder,
@@ -229,13 +254,12 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
-                Text(
-                    "Music goes in Music / $folderShown and videos in Movies / $folderShown. Files you already saved stay where they are.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                OptionLabel("Downloads at the same time")
+            }
+            GroupDivider()
+            SettingBlock(
+                "Downloads at the same time",
+                "More is faster, but some sites can block downloads when there are too many at once.",
+            ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     (1..3).forEach { count ->
                         ChoicePill(
@@ -246,115 +270,56 @@ fun SettingsScreen(
                         )
                     }
                 }
-                Text(
-                    "More is faster, but some sites can block downloads when there are too many at once.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        OptionLabel("Wi-Fi only")
-                        Text(
-                            "Downloads wait until you are on Wi-Fi so they do not use your mobile data.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(
-                        checked = settings.wifiOnly,
-                        onCheckedChange = {
-                            haptics.tick()
-                            onChange(settings.copy(wifiOnly = it))
-                        },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-                            checkedTrackColor = MaterialTheme.colorScheme.primary,
-                            checkedBorderColor = MaterialTheme.colorScheme.primary,
-                            uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            uncheckedTrackColor = YtTheme.colors.track,
-                            uncheckedBorderColor = MaterialTheme.colorScheme.outline,
-                        ),
-                    )
-                }
             }
+            GroupDivider()
+            SwitchRow(
+                "Wi-Fi only",
+                "Downloads wait until you are on Wi-Fi so they do not use your mobile data.",
+                settings.wifiOnly,
+            ) { onChange(settings.copy(wifiOnly = it)) }
         }
 
-        // ---- the yt-dlp engine ----
-        YtCard(Modifier.fillMaxWidth().staggeredEntrance(4, "settings-4")) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    "Download engine",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    "yt-dlp version: ${engineVersion ?: "not known yet"}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    "The app updates it when it starts. If downloads stop working, update it by hand here.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                OutlinePillButton(
-                    text = if (updating) "Updating..." else "Update now",
-                    onClick = onUpdate,
-                    enabled = !updating,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                if (updateMessage != null) {
-                    Text(
-                        updateMessage,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = YtTheme.colors.goldText,
-                    )
-                }
-            }
-        }
-
-        // ---- cookies for sites that need a login, like instagram ----
-        YtCard(Modifier.fillMaxWidth().staggeredEntrance(5, "settings-cookies")) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    "Login cookies",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    "Some sites, like Instagram, need you to be logged in to download from them. " +
-                        "Export your cookies to a text file from a browser where you are logged in, " +
-                        "then add that file here.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+        SettingsGroup("Sites that need a login", 4) {
+            SettingBlock(
+                "Login cookies",
+                "Some sites, like Instagram, need you to be logged in. Export your cookies to a text file " +
+                    "from a browser where you are logged in, then add that file here. Cookies stop working " +
+                    "after a while, so you may need to add a fresh file later.",
+            ) {
                 if (hasCookies) {
-                    Text(
-                        "Cookies added",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = YtTheme.colors.goldText,
-                    )
-                    OutlinePillButton(
-                        text = "Remove",
+                    Text("Cookies added", style = MaterialTheme.typography.labelLarge, color = YtTheme.colors.success)
+                    SecondaryButton(
+                        text = "Remove cookies",
                         onClick = onClearCookies,
+                        contentColor = MaterialTheme.colorScheme.error,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 } else {
-                    OutlinePillButton(
+                    SecondaryButton(
                         text = "Choose cookies file",
                         onClick = onPickCookies,
+                        contentColor = YtTheme.colors.accentText,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
-                Text(
-                    "Cookies stop working after a while, so you may need to add a fresh file later.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+            }
+        }
+
+        SettingsGroup("Download engine", 5) {
+            SettingBlock(
+                "yt-dlp ${engineVersion ?: "(checking)"}",
+                "AnyGrab updates it every time it starts. If downloads stop working, update it by hand here.",
+            ) {
+                SecondaryButton(
+                    text = if (updating) "Updating..." else "Update now",
+                    onClick = onUpdate,
+                    enabled = !updating,
+                    contentColor = YtTheme.colors.accentText,
+                    modifier = Modifier.fillMaxWidth(),
                 )
+                if (updateMessage != null) {
+                    Text(updateMessage, style = MaterialTheme.typography.bodySmall, color = YtTheme.colors.accentText)
+                }
             }
         }
 
@@ -362,7 +327,10 @@ fun SettingsScreen(
             "Only save content you own or have permission to download.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.staggeredEntrance(6, "settings-6"),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp)
+                .staggeredEntrance(6, "settings-6"),
         )
     }
 }

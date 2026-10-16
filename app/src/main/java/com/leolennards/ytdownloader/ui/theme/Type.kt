@@ -20,13 +20,25 @@ val Manrope = FontFamily(
     ),
     Font(
         R.font.manrope,
+        weight = FontWeight.Medium,
+        variationSettings = FontVariation.Settings(FontVariation.weight(500)),
+    ),
+    Font(
+        R.font.manrope,
         weight = FontWeight.SemiBold,
         variationSettings = FontVariation.Settings(FontVariation.weight(600)),
+    ),
+    Font(
+        R.font.manrope,
+        weight = FontWeight.Bold,
+        variationSettings = FontVariation.Settings(FontVariation.weight(750)),
     ),
 )
 
 private val Regular = FontWeight.Normal
+private val Medium = FontWeight.Medium
 private val SemiBold = FontWeight.SemiBold
+private val Bold = FontWeight.Bold
 
 private fun style(size: Int, line: Int, weight: FontWeight, tracking: Double = 0.0) = TextStyle(
     fontFamily = Manrope,
@@ -36,24 +48,24 @@ private fun style(size: Int, line: Int, weight: FontWeight, tracking: Double = 0
     letterSpacing = tracking.sp,
 )
 
-// sizes come from the mockup. only regular and semibold used
+// bold for big titles, semibold for anything you tap or scan, regular for reading
 val YtTypography = Typography(
-    displayLarge = style(44, 50, SemiBold, -0.9),    // progress percentage
-    displayMedium = style(36, 42, SemiBold, -0.7),
-    displaySmall = style(32, 37, SemiBold, -0.6),
-    headlineLarge = style(32, 37, SemiBold, -0.6),   // screen titles
-    headlineMedium = style(24, 30, SemiBold, -0.3),
-    headlineSmall = style(20, 25, SemiBold, -0.2),
-    titleLarge = style(20, 25, SemiBold, -0.2),      // video title on preview
-    titleMedium = style(16, 22, SemiBold),           // section headers
+    displayLarge = style(56, 60, Bold, -1.6),        // progress percentage
+    displayMedium = style(40, 46, Bold, -1.0),
+    displaySmall = style(34, 40, Bold, -0.8),
+    headlineLarge = style(34, 40, Bold, -0.9),       // screen titles
+    headlineMedium = style(26, 32, Bold, -0.5),
+    headlineSmall = style(22, 28, Bold, -0.3),       // player title
+    titleLarge = style(20, 26, SemiBold, -0.2),      // video title on preview
+    titleMedium = style(16, 22, SemiBold, -0.1),     // section headers, buttons
     titleSmall = style(15, 20, SemiBold),            // list row titles
     bodyLarge = style(16, 24, Regular),              // input text
     bodyMedium = style(15, 21, Regular),             // subtitles
-    bodySmall = style(13, 18, Regular),              // row metadata
-    labelLarge = style(14, 20, SemiBold),            // buttons
-    labelMedium = style(12, 16, SemiBold),           // field labels
-    labelSmall = style(11, 14, SemiBold),            // nav labels
+    bodySmall = style(13, 18, Medium),               // row metadata
+    labelLarge = style(14, 20, SemiBold),            // small buttons
+    labelMedium = style(12, 16, SemiBold),           // field labels, badges
+    labelSmall = style(11, 14, SemiBold, 0.2),       // nav labels
 )
 
 // small label above screen titles. use .uppercase() on the text where its used
-val EyebrowStyle = style(12, 16, SemiBold, 1.2)
+val EyebrowStyle = style(12, 16, Bold, 1.4)

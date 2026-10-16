@@ -3,58 +3,70 @@ package com.leolennards.ytdownloader.ui.theme
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 
-// ---- light: cream, near black, gold ----
-val LightBackground = Color(0xFFF7F3EC)
-val LightSurface = Color(0xFFFFFDF9)      // cards
-val LightTrack = Color(0xFFECE4D3)        // toggle and progress track
-val LightTonal = Color(0xFFEFE6D2)        // icon tiles, selected chips
-val LightThumbnail = Color(0xFFE9E0CC)
-val LightHairline = Color(0xFFE4DCCB)
-val LightInk = Color(0xFF1C1A17)
-val LightMuted = Color(0xFF6B645A)
-val LightGold = Color(0xFFB8975A)         // buttons and progress
-val LightGoldText = Color(0xFF7D6230)     // gold for text and icons (dark enough to read on cream)
+// ---- light: soft paper white, ink, amber ----
+val LightBackground = Color(0xFFF4F3EF)
+val LightSurface = Color(0xFFFFFFFF)      // cards
+val LightSurfaceHigh = Color(0xFFEAE8E2)  // fields, raised bits inside cards
+val LightTrack = Color(0xFFE4E1D9)        // toggle and progress track
+val LightTonal = Color(0xFFFCEFD4)        // soft amber, selected chips and icon tiles
+val LightPlaceholder = Color(0xFFE7E4DC)
+val LightHairline = Color(0xFFE2DFD7)
+val LightInk = Color(0xFF121212)
+val LightMuted = Color(0xFF66635C)
+val LightAccent = Color(0xFFF2A81D)       // buttons and progress
+val LightAccentText = Color(0xFF8A5800)   // amber for text and icons (dark enough to read on white)
 
-// ---- dark: near black, warm white ----
-val DarkBackground = Color(0xFF141210)
-val DarkSurface = Color(0xFF1D1A16)
-val DarkTrack = Color(0xFF26221C)
-val DarkTonal = Color(0xFF2B241A)
-val DarkThumbnail = Color(0xFF2A251E)
-val DarkHairline = Color(0xFF2E2922)
-val DarkInk = Color(0xFFF1EBDF)
-val DarkMuted = Color(0xFFA69D8D)
-val DarkGold = Color(0xFFD4B27A)
-val DarkGoldText = Color(0xFFD4B27A)
+// ---- dark: deep graphite, warm white, bright amber ----
+val DarkBackground = Color(0xFF0B0B0D)
+val DarkSurface = Color(0xFF151518)
+val DarkSurfaceHigh = Color(0xFF1F1F23)
+val DarkTrack = Color(0xFF2A2A2F)
+val DarkTonal = Color(0xFF2E2414)
+val DarkPlaceholder = Color(0xFF232327)
+val DarkHairline = Color(0xFF242428)
+val DarkInk = Color(0xFFF5F3EE)
+val DarkMuted = Color(0xFF9C9990)
+val DarkAccent = Color(0xFFFFB938)
+val DarkAccentText = Color(0xFFFFC55C)
 
-val ErrorLight = Color(0xFFB3402A)
-val ErrorDark = Color(0xFFE59280)
+val OnAccent = Color(0xFF1B1205)
+
+val ErrorLight = Color(0xFFB3261E)
+val ErrorDark = Color(0xFFFF8A80)
+val SuccessLight = Color(0xFF2E7D4F)
+val SuccessDark = Color(0xFF7BD8A0)
 
 // extra colors that material3 has no slot for, use YtTheme.colors
 @Immutable
 data class YtExtraColors(
-    val gold: Color,
-    val goldText: Color,
+    val accent: Color,
+    val accentText: Color,
     val tonal: Color,
     val track: Color,
     val hairline: Color,
-    val thumbnail: Color,
+    val placeholder: Color,
+    val surfaceHigh: Color,
+    val success: Color,
 )
 
 val LightExtraColors = YtExtraColors(
-    gold = LightGold,
-    goldText = LightGoldText,
+    accent = LightAccent,
+    accentText = LightAccentText,
     tonal = LightTonal,
     track = LightTrack,
     hairline = LightHairline,
-    thumbnail = LightThumbnail,
+    placeholder = LightPlaceholder,
+    surfaceHigh = LightSurfaceHigh,
+    success = SuccessLight,
 )
 
 val DarkExtraColors = YtExtraColors(
-    gold = DarkGold,
-    goldText = DarkGoldText,
+    accent = DarkAccent,
+    accentText = DarkAccentText,
     tonal = DarkTonal,
     track = DarkTrack,
     hairline = DarkHairline,
-    thumbnail = DarkThumbnail,
+    placeholder = DarkPlaceholder,
+    surfaceHigh = DarkSurfaceHigh,
+    success = SuccessDark,
 )

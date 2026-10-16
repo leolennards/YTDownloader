@@ -4,18 +4,21 @@ import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.net.Uri
 import android.widget.VideoView
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -24,16 +27,23 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -41,10 +51,17 @@ import com.leolennards.ytdownloader.R
 import com.leolennards.ytdownloader.data.DownloadItem
 import com.leolennards.ytdownloader.data.MediaFormat
 import com.leolennards.ytdownloader.data.formatDuration
+import com.leolennards.ytdownloader.ui.components.ArtworkCache
+import com.leolennards.ytdownloader.ui.components.ArtworkFrame
+import com.leolennards.ytdownloader.ui.components.EyebrowLabel
 import com.leolennards.ytdownloader.ui.components.RoundIconButton
 import com.leolennards.ytdownloader.ui.components.YtIcon
+import com.leolennards.ytdownloader.ui.components.ambientColor
+import com.leolennards.ytdownloader.ui.theme.Motion
 import com.leolennards.ytdownloader.ui.theme.YtDimens
 import com.leolennards.ytdownloader.ui.theme.YtTheme
+import com.leolennards.ytdownloader.ui.theme.motionSpring
+import com.leolennards.ytdownloader.ui.theme.motionTween
 import com.leolennards.ytdownloader.ui.theme.ytClickable
 import kotlinx.coroutines.delay
 
@@ -60,99 +77,193 @@ private class PlayerState {
 }
 
 // plays a saved file. video uses VideoView, audio uses MediaPlayer directly since
-// VideoView can be unreliable with audio-only files on some phones ("Can't play this video")
+// VideoView can be unreliable with audio-only files on some phones ("Can't play this video").
+// items is the list it was opened from, so previous and next walk through it
 @Composable
-fun PlayerScreen(item: DownloadItem, onBack: () -> Unit, modifier: Modifier = Modifier) {
+fun PlayerScreen(
+    items: List<DownloadItem>,
+    index: Int,
+    onIndexChange: (Int) -> Unit,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val item = items.getOrNull(index) ?: run { onBack(); return }
     val isVideo = item.format == MediaFormat.MP4
     val uri = item.uri ?: run { onBack(); return }
-    val state = remember { PlayerState() }
+    val hasPrevious = index > 0
+    val hasNext = index < items.lastIndex
+    val context = LocalContext.current
+    val density = LocalDensity.current
 
-    Column(
+    // the cover, and a soft glow of its main color behind everything
+    val artPx = with(density) { 720.dp.roundToPx() }
+    val art by produceState(ArtworkCache.peek(uri, artPx), uri) {
+        if (value == null) value = ArtworkCache.load(context, uri, item.format, artPx)
+    }
+    val glowTarget = remember(art) { art?.ambientColor() } ?: MaterialTheme.colorScheme.primary
+    val glow by animateColorAsState(glowTarget, motionTween(Motion.Screen), label = "playerGlow")
+
+    Box(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = YtDimens.ScreenPadding)
-            .padding(top = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(24.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            RoundIconButton(R.drawable.ic_back, "Back", onBack)
-            Text(
-                item.title,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-        }
-
-        if (isVideo) {
-            VideoPlayer(uri, state)
-        } else {
-            AudioPlayer(uri, state)
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1.6f)
-                    .clip(RoundedCornerShape(YtDimens.CardRadius))
-                    .background(YtTheme.colors.track),
-                contentAlignment = Alignment.Center,
-            ) {
-                YtIcon(R.drawable.ic_music, tint = MaterialTheme.colorScheme.primary, size = 56.dp)
-            }
-        }
-
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            val shown = if (state.dragging) state.dragValue else state.position.toFloat()
-            Slider(
-                value = shown.coerceIn(0f, state.duration.coerceAtLeast(1).toFloat()),
-                onValueChange = {
-                    state.dragging = true
-                    state.dragValue = it
-                },
-                onValueChangeFinished = {
-                    state.seekTo?.invoke(state.dragValue.toInt())
-                    state.position = state.dragValue.toInt()
-                    state.dragging = false
-                },
-                valueRange = 0f..state.duration.coerceAtLeast(1).toFloat(),
-                colors = SliderDefaults.colors(
-                    thumbColor = MaterialTheme.colorScheme.primary,
-                    activeTrackColor = MaterialTheme.colorScheme.primary,
-                    inactiveTrackColor = YtTheme.colors.track,
+            .background(
+                Brush.verticalGradient(
+                    0f to glow.copy(alpha = 0.38f),
+                    0.65f to MaterialTheme.colorScheme.background,
                 ),
-            )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(
-                    formatDuration((shown / 1000).toLong()),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+            ),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .navigationBarsPadding()
+                .padding(horizontal = YtDimens.ScreenPadding)
+                .padding(top = 8.dp, bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RoundIconButton(
+                    R.drawable.ic_back,
+                    "Back",
+                    onBack,
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    background = YtTheme.colors.surfaceHigh.copy(alpha = 0.7f),
                 )
-                Text(
-                    formatDuration((state.duration / 1000).toLong()),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    EyebrowLabel(if (items.size > 1) "Playing ${index + 1} of ${items.size}" else "Now playing")
+                }
+                Box(Modifier.size(YtDimens.MinTouch))
             }
-        }
 
-        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            Box(
-                modifier = Modifier
-                    .size(72.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary)
-                    .ytClickable { state.toggle?.invoke() },
-                contentAlignment = Alignment.Center,
-            ) {
-                YtIcon(
-                    if (state.playing) R.drawable.ic_pause else R.drawable.ic_play,
-                    tint = MaterialTheme.colorScheme.onPrimary,
-                    size = 30.dp,
-                    contentDescription = if (state.playing) "Pause" else "Play",
-                )
+            // a fresh player for each file
+            key(uri) {
+                val state = remember { PlayerState() }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (isVideo) {
+                        VideoPlayer(uri, state)
+                    } else {
+                        AudioPlayer(uri, state, onFinished = { if (hasNext) onIndexChange(index + 1) })
+                        val playingScale by animateFloatAsState(
+                            if (state.playing) 1f else 0.9f,
+                            motionSpring(dampingRatio = 0.7f),
+                            label = "artScale",
+                        )
+                        ArtworkFrame(
+                            image = art,
+                            format = MediaFormat.MP3,
+                            shape = MaterialTheme.shapes.large,
+                            iconSize = 64.dp,
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .aspectRatio(1f, matchHeightConstraintsFirst = true)
+                                .graphicsLayer {
+                                    scaleX = playingScale
+                                    scaleY = playingScale
+                                }
+                                .shadow(32.dp, MaterialTheme.shapes.large, spotColor = glow),
+                        )
+                    }
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        item.title,
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        item.artist?.takeIf { it.isNotBlank() } ?: item.meta,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = YtTheme.colors.accentText,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    val shown = if (state.dragging) state.dragValue else state.position.toFloat()
+                    Slider(
+                        value = shown.coerceIn(0f, state.duration.coerceAtLeast(1).toFloat()),
+                        onValueChange = {
+                            state.dragging = true
+                            state.dragValue = it
+                        },
+                        onValueChangeFinished = {
+                            state.seekTo?.invoke(state.dragValue.toInt())
+                            state.position = state.dragValue.toInt()
+                            state.dragging = false
+                        },
+                        valueRange = 0f..state.duration.coerceAtLeast(1).toFloat(),
+                        colors = SliderDefaults.colors(
+                            thumbColor = MaterialTheme.colorScheme.onBackground,
+                            activeTrackColor = MaterialTheme.colorScheme.onBackground,
+                            inactiveTrackColor = YtTheme.colors.track,
+                        ),
+                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(
+                            formatDuration((shown / 1000).toLong()),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            "-" + formatDuration(((state.duration - shown).coerceAtLeast(0f) / 1000).toLong()),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(28.dp, Alignment.CenterHorizontally),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    SkipButton(R.drawable.ic_skip_prev, "Previous", enabled = hasPrevious || state.position > 3000) {
+                        // like most players: restart the song first, go back on a second press
+                        if (state.position > 3000 || !hasPrevious) state.seekTo?.invoke(0) else onIndexChange(index - 1)
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(76.dp)
+                            .clip(CircleShape)
+                            .ytClickable { state.toggle?.invoke() }
+                            .background(MaterialTheme.colorScheme.primary),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        YtIcon(
+                            if (state.playing) R.drawable.ic_pause else R.drawable.ic_play,
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            size = 32.dp,
+                            contentDescription = if (state.playing) "Pause" else "Play",
+                        )
+                    }
+                    SkipButton(R.drawable.ic_skip_next, "Next", enabled = hasNext) { onIndexChange(index + 1) }
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun SkipButton(icon: Int, description: String, enabled: Boolean, onClick: () -> Unit) {
+    val alpha by animateFloatAsState(if (enabled) 1f else 0.3f, motionTween(), label = "skipAlpha")
+    Box(
+        modifier = Modifier
+            .size(56.dp)
+            .clip(CircleShape)
+            .ytClickable(enabled = enabled, onClick = onClick)
+            .graphicsLayer { this.alpha = alpha },
+        contentAlignment = Alignment.Center,
+    ) {
+        YtIcon(icon, tint = MaterialTheme.colorScheme.onBackground, size = 28.dp, contentDescription = description)
     }
 }
 
@@ -205,15 +316,16 @@ private fun VideoPlayer(uri: String, state: PlayerState) {
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(16f / 9f)
-            .clip(RoundedCornerShape(YtDimens.CardRadius))
+            .clip(MaterialTheme.shapes.large)
             .background(Color.Black),
     )
 }
 
 // plays an mp3 with MediaPlayer directly, no view needed
 @Composable
-private fun AudioPlayer(uri: String, state: PlayerState) {
+private fun AudioPlayer(uri: String, state: PlayerState, onFinished: () -> Unit) {
     val context = LocalContext.current
+    val finished by rememberUpdatedState(onFinished)
     var player by remember { mutableStateOf<MediaPlayer?>(null) }
 
     DisposableEffect(uri) {
@@ -235,6 +347,7 @@ private fun AudioPlayer(uri: String, state: PlayerState) {
         mp.setOnCompletionListener {
             state.playing = false
             state.position = state.duration
+            finished()
         }
         // setDataSource and prepareAsync can both throw if the file is missing or unreadable
         runCatching {

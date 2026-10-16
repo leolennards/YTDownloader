@@ -11,15 +11,15 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
 private val LightColorScheme = lightColorScheme(
-    primary = LightGold,
-    onPrimary = LightInk,
+    primary = LightAccent,
+    onPrimary = OnAccent,
     primaryContainer = LightTonal,
-    onPrimaryContainer = LightGoldText,
+    onPrimaryContainer = LightAccentText,
     secondary = LightInk,                 // selected toggle: dark pill, cream text
     onSecondary = LightBackground,
     secondaryContainer = LightTonal,
-    onSecondaryContainer = LightGoldText,
-    tertiary = LightGoldText,
+    onSecondaryContainer = LightAccentText,
+    tertiary = LightAccentText,
     onTertiary = LightBackground,
     background = LightBackground,
     onBackground = LightInk,
@@ -35,20 +35,20 @@ private val LightColorScheme = lightColorScheme(
     surfaceContainerLowest = LightSurface,
     surfaceContainerLow = LightSurface,
     surfaceContainer = LightSurface,
-    surfaceContainerHigh = LightTrack,
+    surfaceContainerHigh = LightSurfaceHigh,
     surfaceContainerHighest = LightTrack,
 )
 
 private val DarkColorScheme = darkColorScheme(
-    primary = DarkGold,
-    onPrimary = LightInk,
+    primary = DarkAccent,
+    onPrimary = OnAccent,
     primaryContainer = DarkTonal,
-    onPrimaryContainer = DarkGoldText,
+    onPrimaryContainer = DarkAccentText,
     secondary = DarkInk,
     onSecondary = DarkBackground,
     secondaryContainer = DarkTonal,
-    onSecondaryContainer = DarkGoldText,
-    tertiary = DarkGoldText,
+    onSecondaryContainer = DarkAccentText,
+    tertiary = DarkAccentText,
     onTertiary = DarkBackground,
     background = DarkBackground,
     onBackground = DarkInk,
@@ -64,13 +64,13 @@ private val DarkColorScheme = darkColorScheme(
     surfaceContainerLowest = DarkSurface,
     surfaceContainerLow = DarkSurface,
     surfaceContainer = DarkSurface,
-    surfaceContainerHigh = DarkTrack,
+    surfaceContainerHigh = DarkSurfaceHigh,
     surfaceContainerHighest = DarkTrack,
 )
 
 private val LocalYtColors = staticCompositionLocalOf { LightExtraColors }
 
-// gives access to the extra colors, like YtTheme.colors.goldText
+// gives access to the extra colors, like YtTheme.colors.accentText
 object YtTheme {
     val colors: YtExtraColors
         @Composable
@@ -83,7 +83,7 @@ fun YTDownloaderTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
-    // no dynamic color on purpose, the gold look is the design
+    // no dynamic color on purpose, the amber look is the design
     val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
     val extra = if (darkTheme) DarkExtraColors else LightExtraColors
 

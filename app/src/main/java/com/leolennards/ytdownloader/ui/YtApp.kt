@@ -8,6 +8,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.MaterialTheme
@@ -30,6 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -49,6 +52,7 @@ import com.leolennards.ytdownloader.data.QueueSummary
 import com.leolennards.ytdownloader.data.extractLinks
 import com.leolennards.ytdownloader.data.isPlaylistLink
 import com.leolennards.ytdownloader.data.toItem
+import com.leolennards.ytdownloader.ui.components.ArtworkCache
 import com.leolennards.ytdownloader.ui.components.Tab
 import com.leolennards.ytdownloader.ui.components.ToastHost
 import com.leolennards.ytdownloader.ui.components.YtBottomBar
@@ -66,7 +70,10 @@ import com.leolennards.ytdownloader.ui.theme.rememberHaptics
 import com.leolennards.ytdownloader.ui.theme.ytSpring
 import com.leolennards.ytdownloader.ui.theme.ytTween
 import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 // depth 0 = main tabs, bigger = further in. used for the slide direction
 enum class Screen(val depth: Int) {
@@ -99,8 +106,11 @@ fun YtApp(
     }
     var libraryFilter by rememberSaveable { mutableIntStateOf(0) }
     var libraryQuery by rememberSaveable { mutableStateOf("") }
-    // the file open in the player
-    var playing by remember { mutableStateOf<DownloadItem?>(null) }
+    // the list the player was opened from, and which one in it is playing
+    var playlist by remember { mutableStateOf<List<DownloadItem>>(emptyList()) }
+    var playIndex by rememberSaveable { mutableIntStateOf(0) }
+    // where to go back to from the player
+    var playerReturn by rememberSaveable { mutableStateOf(Screen.Library) }
     var focusJobId by rememberSaveable { mutableStateOf<String?>(null) }
 
     val fetch by DownloadController.fetchState.collectAsState()
@@ -217,21 +227,46 @@ fun YtApp(
         }
     }
 
+    fun play(item: DownloadItem, list: List<DownloadItem>) {
+        val playable = list.filter { it.uri != null && it.format == item.format }.ifEmpty { listOf(item) }
+        playlist = playable
+        playIndex = playable.indexOfFirst { it.uri == item.uri }.coerceAtLeast(0)
+        playerReturn = if (screen == Screen.Player) playerReturn else screen
+        screen = Screen.Player
+    }
+    val scope = rememberCoroutineScope()
+    fun delete(item: DownloadItem) {
+        val uri = item.uri ?: return
+        scope.launch {
+            val deleted = withContext(Dispatchers.IO) { DownloadController.deleteSaved(uri) }
+            ArtworkCache.forget(uri)
+            haptics.confirm()
+            showToast(if (deleted) "Deleted" else "Removed from the library")
+        }
+    }
+
     BackHandler(enabled = screen != Screen.Paste) {
-        screen = if (screen == Screen.Player) Screen.Library else Screen.Paste
+        screen = when (screen) {
+            Screen.Player -> playerReturn
+            else -> Screen.Paste
+        }
     }
 
     val motion = LocalMotionEnabled.current
     val slidePx = with(LocalDensity.current) { Motion.ScreenSlide.roundToPx() }
 
-    Column(
+    val showBar = screen == Screen.Paste || screen == Screen.Library || screen == Screen.Settings
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .statusBarsPadding()
-            .imePadding(),
+            .background(MaterialTheme.colorScheme.background),
     ) {
-        Box(Modifier.weight(1f)) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .imePadding(),
+        ) {
             AnimatedContent(
                 targetState = screen,
                 modifier = Modifier.fillMaxSize(),
@@ -270,8 +305,9 @@ fun YtApp(
                             }
                         },
                         onSeeAll = { screen = Screen.Library },
+                        onPlay = { play(it, items) },
                         queue = summary,
-                        recent = items.firstOrNull(),
+                        recent = items.take(10),
                     )
 
                     Screen.Preview -> PreviewScreen(
@@ -308,6 +344,7 @@ fun YtApp(
                         },
                         onAddAnother = { screen = Screen.Paste },
                         onViewLibrary = { screen = Screen.Library },
+                        onPlay = { play(it, items) },
                     )
 
                     Screen.Library -> LibraryScreen(
@@ -321,18 +358,21 @@ fun YtApp(
                         onCancelAll = { DownloadController.cancelAll() },
                         query = libraryQuery,
                         onQueryChange = { libraryQuery = it },
-                        onPlay = {
-                            playing = it
-                            screen = Screen.Player
-                        },
+                        onPlay = { item, list -> play(item, list) },
+                        onDelete = { delete(it) },
+                        onAddFirst = { screen = Screen.Paste },
                     )
 
                     Screen.Player -> {
-                        val current = playing
-                        if (current == null) {
+                        if (playlist.isEmpty()) {
                             LaunchedEffect(Unit) { screen = Screen.Library }
                         } else {
-                            PlayerScreen(item = current, onBack = { screen = Screen.Library })
+                            PlayerScreen(
+                                items = playlist,
+                                index = playIndex.coerceIn(0, playlist.lastIndex),
+                                onIndexChange = { playIndex = it },
+                                onBack = { screen = playerReturn },
+                            )
                         }
                     }
 
@@ -360,11 +400,18 @@ fun YtApp(
                 },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(16.dp),
+                    .navigationBarsPadding()
+                    .padding(start = 16.dp, end = 16.dp, bottom = if (showBar) 96.dp else 16.dp),
             )
         }
-        if (screen == Screen.Paste || screen == Screen.Library || screen == Screen.Settings) {
+        AnimatedVisibility(
+            visible = showBar,
+            modifier = Modifier.align(Alignment.BottomCenter),
+            enter = fadeIn(ytTween(motion)) + slideInVertically(ytSpring(motion)) { it },
+            exit = fadeOut(ytTween(motion, Motion.Micro)) + slideOutVertically(ytSpring(motion)) { it },
+        ) {
             YtBottomBar(
+                badge = active.size,
                 selected = when (screen) {
                     Screen.Library -> Tab.Library
                     Screen.Settings -> Tab.Settings

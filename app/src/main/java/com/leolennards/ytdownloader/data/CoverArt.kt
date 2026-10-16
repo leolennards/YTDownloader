@@ -179,6 +179,61 @@ object Id3Cover {
         }.toByteArray()
     }
 
+    // reads the cover picture back out of an mp3's ID3v2 tag, for phones whose own reader cannot.
+    // only needs the start of the file, the tag is always at the front
+    fun extract(mp3: ByteArray): ByteArray? {
+        if (mp3.size < 10 || mp3[0] != 'I'.code.toByte() || mp3[1] != 'D'.code.toByte() || mp3[2] != '3'.code.toByte()) return null
+        val version = mp3[3].toInt()
+        if (version !in 2..4) return null
+        val flags = mp3[5].toInt() and 0xFF
+        val end = (10 + syncsafe(mp3, 6)).coerceAtMost(mp3.size)
+        var pos = 10
+        if (flags and 0x40 != 0 && version >= 3) {
+            // skip the extended header
+            val extSize = if (version == 4) syncsafe(mp3, pos) else int32(mp3, pos) + 4
+            pos += extSize
+        }
+        val idLength = if (version == 2) 3 else 4
+        val headerLength = if (version == 2) 6 else 10
+        while (pos + headerLength <= end) {
+            if (mp3[pos].toInt() == 0) break
+            val id = String(mp3, pos, idLength, Charsets.ISO_8859_1)
+            val size = when (version) {
+                2 -> ((mp3[pos + 3].toInt() and 0xFF) shl 16) or ((mp3[pos + 4].toInt() and 0xFF) shl 8) or (mp3[pos + 5].toInt() and 0xFF)
+                4 -> syncsafe(mp3, pos + 4)
+                else -> int32(mp3, pos + 4)
+            }
+            val bodyStart = pos + headerLength
+            val bodyEnd = bodyStart + size
+            if (size <= 0 || bodyEnd > end) return null
+            if (id == "APIC" || id == "PIC") return pictureData(mp3, bodyStart, bodyEnd, version == 2)
+            pos = bodyEnd
+        }
+        return null
+    }
+
+    // skips the text encoding, mime type (or 3 letter format), picture type and description
+    private fun pictureData(b: ByteArray, start: Int, end: Int, v2: Boolean): ByteArray? {
+        val encoding = b[start].toInt()
+        var pos = start + 1
+        if (v2) {
+            pos += 3
+        } else {
+            while (pos < end && b[pos].toInt() != 0) pos++
+            pos++
+        }
+        pos++ // picture type
+        // the description ends with one zero byte, or two for utf-16
+        if (encoding == 1 || encoding == 2) {
+            while (pos + 1 < end && !(b[pos].toInt() == 0 && b[pos + 1].toInt() == 0)) pos += 2
+            pos += 2
+        } else {
+            while (pos < end && b[pos].toInt() != 0) pos++
+            pos++
+        }
+        return if (pos < end) b.copyOfRange(pos, end) else null
+    }
+
     private fun syncsafe(b: ByteArray, at: Int): Int =
         ((b[at].toInt() and 0x7F) shl 21) or ((b[at + 1].toInt() and 0x7F) shl 14) or
             ((b[at + 2].toInt() and 0x7F) shl 7) or (b[at + 3].toInt() and 0x7F)

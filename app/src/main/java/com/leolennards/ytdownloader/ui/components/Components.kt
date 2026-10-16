@@ -53,7 +53,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -610,8 +613,7 @@ fun QueueJobCard(
                             job.status == JobStatus.Running -> YtTheme.colors.accentText
                             else -> MaterialTheme.colorScheme.onSurfaceVariant
                         },
-                        // show the whole error when it failed so its possible to see what went wrong
-                        maxLines = if (failed) 8 else 2,
+                        maxLines = if (failed) 4 else 2,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
@@ -625,6 +627,41 @@ fun QueueJobCard(
             if (!failed) {
                 YtProgressBar(job.progress, Modifier.padding(start = 2.dp, end = 10.dp), height = 4.dp)
             }
+            if (failed && !job.errorDetails.isNullOrBlank()) {
+                ErrorDetails(job.errorDetails, Modifier.padding(start = 62.dp, end = 10.dp))
+            }
+        }
+    }
+}
+
+// what every try ran into, folded away until asked for, with a button to copy it
+@Composable
+private fun ErrorDetails(details: String, modifier: Modifier = Modifier) {
+    var open by remember { mutableStateOf(false) }
+    val clipboard = LocalClipboardManager.current
+    val haptics = rememberHaptics()
+    var copied by remember { mutableStateOf(false) }
+    Column(modifier.animateContentSize(motionSpring()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            TextAction(if (open) "Hide details" else "Show details", { open = !open }, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (open) {
+                TextAction(if (copied) "Copied" else "Copy", {
+                    clipboard.setText(AnnotatedString(details))
+                    haptics.confirm()
+                    copied = true
+                })
+            }
+        }
+        if (open) {
+            Text(
+                details,
+                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp, lineHeight = 15.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(YtTheme.colors.surfaceHigh, MaterialTheme.shapes.small)
+                    .padding(12.dp),
+            )
         }
     }
 }

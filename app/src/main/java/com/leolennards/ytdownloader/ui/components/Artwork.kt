@@ -31,6 +31,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.leolennards.ytdownloader.data.Id3Cover
 import com.leolennards.ytdownloader.data.MediaFormat
 import com.leolennards.ytdownloader.ui.theme.ArtShape
 import com.leolennards.ytdownloader.ui.theme.YtTheme
@@ -89,16 +90,36 @@ object ArtworkCache {
         return try {
             retriever.setDataSource(context, uri)
             if (format == MediaFormat.MP3) {
-                val bytes = retriever.embeddedPicture ?: return null
-                decodeSampled(bytes, sizePx)
+                retriever.embeddedPicture?.let { decodeSampled(it, sizePx) } ?: coverFallback(context, uri, sizePx)
             } else {
                 retriever.getFrameAtTime(1_000_000)
             }
         } catch (e: Exception) {
-            null
+            if (format == MediaFormat.MP3) coverFallback(context, uri, sizePx) else null
         } finally {
             runCatching { retriever.release() }
         }
+    }
+
+    // some phones cannot read covers from older files (like the png ones the app used to make),
+    // so ask the media library for its copy, and if that fails read the tag ourselves
+    private fun coverFallback(context: Context, uri: Uri, sizePx: Int): Bitmap? {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && uri.scheme == "content") {
+            runCatching { return context.contentResolver.loadThumbnail(uri, Size(sizePx, sizePx), null) }
+        }
+        return runCatching {
+            val head = context.contentResolver.openInputStream(uri)?.use { input ->
+                val buffer = ByteArray(4 * 1024 * 1024)
+                var read = 0
+                while (read < buffer.size) {
+                    val n = input.read(buffer, read, buffer.size - read)
+                    if (n <= 0) break
+                    read += n
+                }
+                buffer.copyOf(read)
+            } ?: return null
+            Id3Cover.extract(head)?.let { decodeSampled(it, sizePx) }
+        }.getOrNull()
     }
 
     private fun decodeSampled(bytes: ByteArray, sizePx: Int): Bitmap? {

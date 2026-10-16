@@ -4,8 +4,10 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assume
 import org.junit.Test
 import java.io.ByteArrayOutputStream
+import kotlin.io.path.createTempDirectory
 
 class CoverArtTest {
     // a w x h picture with flat black bars and a noisy middle, like a letterboxed thumbnail
@@ -111,6 +113,55 @@ class CoverArtTest {
     fun leavesUnusualTagsAlone() {
         val unsynced = mp3(3).also { it[5] = 0x80.toByte() }
         assertNull(Id3Cover.embed(unsynced, JPEG))
+    }
+
+    @Test
+    fun readsBackTheCoverItWrote() {
+        for (version in 3..4) {
+            val title = frame("TIT2", byteArrayOf(0) + "Song".toByteArray(), version)
+            val tagged = Id3Cover.embed(mp3(version, title), JPEG)!!
+            assertArrayEquals(JPEG, Id3Cover.extract(tagged))
+        }
+    }
+
+    @Test
+    fun noCoverMeansNull() {
+        assertNull(Id3Cover.extract(AUDIO))
+        assertNull(Id3Cover.extract(mp3(3, frame("TIT2", byteArrayOf(0) + "Song".toByteArray(), 3))))
+    }
+
+    // files like the ones older versions of the app made: ffmpeg, a png cover, ID3 v2.3 or v2.4.
+    // needs ffmpeg on the computer running the tests, skipped otherwise
+    @Test
+    fun readsCoversMadeByFfmpeg() {
+        val ffmpeg = listOf("/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg").map { java.io.File(it) }
+            .firstOrNull { it.canExecute() }
+        Assume.assumeTrue("ffmpeg not installed", ffmpeg != null)
+        val dir = createTempDirectory("covers").toFile()
+        try {
+            val png = java.io.File(dir, "cover.png")
+            run(ffmpeg!!.path, "-v", "error", "-f", "lavfi", "-i", "testsrc=size=320x320", "-frames:v", "1", png.path)
+            for (version in listOf("3", "4")) {
+                val out = java.io.File(dir, "song$version.mp3")
+                run(
+                    ffmpeg.path, "-v", "error", "-f", "lavfi", "-i", "sine=duration=1", "-i", png.path,
+                    "-map", "0", "-map", "1", "-c:a", "libmp3lame", "-c:v", "copy", "-id3v2_version", version,
+                    "-metadata", "title=Song", "-metadata:s:v", "title=Album cover", "-metadata:s:v", "comment=Cover (front)",
+                    out.path,
+                )
+                val cover = Id3Cover.extract(out.readBytes())
+                assertNotNull("v2.$version cover", cover)
+                assertArrayEquals("v2.$version cover", png.readBytes(), cover)
+            }
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    private fun run(vararg command: String) {
+        val process = ProcessBuilder(*command).redirectErrorStream(true).start()
+        val output = process.inputStream.bufferedReader().readText()
+        assertEquals(output, 0, process.waitFor())
     }
 
     @Test

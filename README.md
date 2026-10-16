@@ -1,6 +1,6 @@
-# YTDownloader
+# AnyGrab
 
-An Android app that saves videos and music to your phone as MP3 or MP4. Everything runs on the device, there is no server. I built it as a personal project to practise Jetpack Compose and to learn how to run a native tool (yt-dlp) inside an Android app.
+An Android app that saves videos and music from YouTube, TikTok, Instagram, Twitter/X, SoundCloud, and most other sites yt-dlp supports, straight to your phone as MP3 or MP4. Everything runs on the device, there is no server. I built it as a personal project to practise Jetpack Compose and to learn how to run a native tool (yt-dlp) inside an Android app.
 
 ## Screenshots
 
@@ -20,12 +20,13 @@ An Android app that saves videos and music to your phone as MP3 or MP4. Everythi
 - Several downloads run at the same time (you choose 1 to 3 in Settings)
 - MP3 files get tags and cover art, and albums get their own folder with track numbers
 - A notification shows the progress while the app is closed
-- Share a link from YouTube to the app, and it can start downloading straight away (turn this on in Settings, and choose MP3 or MP4)
+- Share a link from another app to AnyGrab, and it can start downloading straight away (turn this on in Settings, and choose MP3 or MP4)
 - Failed downloads try again automatically, and you can retry them by hand
 - A library screen with everything you have downloaded, a search box, and a share button
 - Play your MP3 and MP4 files inside the app
 - Option to only download on Wi-Fi, so it does not use mobile data
 - Settings for the default format and quality, the save folder name, how many downloads run at once, Wi-Fi only, and a button to update yt-dlp by hand
+- Add a cookies file for sites that need you to be logged in, like Instagram
 - Light and dark theme
 
 ## Built with

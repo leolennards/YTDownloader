@@ -86,6 +86,9 @@ fun YtApp(
     onSharedHandled: () -> Unit = {},
     // closes the app screen, used to go back to the app a link was shared from
     onFinish: () -> Unit = {},
+    hasCookies: Boolean = false,
+    onPickCookies: () -> Unit = {},
+    onClearCookies: () -> Unit = {},
 ) {
     var screen by rememberSaveable { mutableStateOf(Screen.Paste) }
     var url by rememberSaveable { mutableStateOf("") }
@@ -340,6 +343,9 @@ fun YtApp(
                         updating = updatingEngine,
                         updateMessage = updateMessage,
                         onUpdate = { DownloadController.updateEngine() },
+                        hasCookies = hasCookies,
+                        onPickCookies = onPickCookies,
+                        onClearCookies = onClearCookies,
                     )
                 }
             }

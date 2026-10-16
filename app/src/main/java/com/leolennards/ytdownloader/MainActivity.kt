@@ -4,18 +4,24 @@ import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import com.leolennards.ytdownloader.data.AppSettings
+import com.leolennards.ytdownloader.data.CookieStore
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.leolennards.ytdownloader.ui.YtApp
 import com.leolennards.ytdownloader.ui.theme.YTDownloaderTheme
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     // text shared to the app from another app (like a youtube link), null when there is none
@@ -28,6 +34,12 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) readShare(intent)
         setContent {
             val settings by AppSettings.state.collectAsState()
+            val hasCookies by CookieStore.hasCookies.collectAsState()
+            val cookiesLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+                if (uri != null) {
+                    CoroutineScope(Dispatchers.IO).launch { CookieStore.import(uri) }
+                }
+            }
             val dark = when (settings.themeMode) {
                 1 -> false
                 2 -> true
@@ -47,6 +59,9 @@ class MainActivity : ComponentActivity() {
                     sharedText = sharedText,
                     onSharedHandled = { sharedText = null },
                     onFinish = { finish() },
+                    hasCookies = hasCookies,
+                    onPickCookies = { cookiesLauncher.launch(arrayOf("*/*")) },
+                    onClearCookies = { CookieStore.clear() },
                 )
             }
         }

@@ -73,6 +73,9 @@ fun SettingsScreen(
     updating: Boolean,
     updateMessage: String?,
     onUpdate: () -> Unit,
+    hasCookies: Boolean = false,
+    onPickCookies: () -> Unit = {},
+    onClearCookies: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val haptics = rememberHaptics()
@@ -158,7 +161,7 @@ fun SettingsScreen(
                             color = MaterialTheme.colorScheme.onSurface,
                         )
                         Text(
-                            "When you share a link to YTDownloader from YouTube, it downloads straight away.",
+                            "When you share a link to AnyGrab from another app, it downloads straight away.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -244,7 +247,7 @@ fun SettingsScreen(
                     }
                 }
                 Text(
-                    "More is faster, but YouTube can block some downloads when there are too many at once.",
+                    "More is faster, but some sites can block downloads when there are too many at once.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -314,11 +317,52 @@ fun SettingsScreen(
             }
         }
 
+        // ---- cookies for sites that need a login, like instagram ----
+        YtCard(Modifier.fillMaxWidth().staggeredEntrance(5, "settings-cookies")) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Login cookies",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    "Some sites, like Instagram, need you to be logged in to download from them. " +
+                        "Export your cookies to a text file from a browser where you are logged in, " +
+                        "then add that file here.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (hasCookies) {
+                    Text(
+                        "Cookies added",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = YtTheme.colors.goldText,
+                    )
+                    OutlinePillButton(
+                        text = "Remove",
+                        onClick = onClearCookies,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                } else {
+                    OutlinePillButton(
+                        text = "Choose cookies file",
+                        onClick = onPickCookies,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                Text(
+                    "Cookies stop working after a while, so you may need to add a fresh file later.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
         Text(
-            "Only save videos you own or have permission to download.",
+            "Only save content you own or have permission to download.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.staggeredEntrance(5, "settings-5"),
+            modifier = Modifier.staggeredEntrance(6, "settings-6"),
         )
     }
 }

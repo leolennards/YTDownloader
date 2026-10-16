@@ -204,7 +204,7 @@ fun PasteLinkScreen(
                 if (formatIndex == 1) {
                     "Queue saves video at 720p. Fetch video lets you choose the quality."
                 } else {
-                    "Only save videos you own or have permission to download."
+                    "Only save content you own or have permission to download."
                 },
                 modifier = Modifier.fillMaxWidth(),
                 style = MaterialTheme.typography.labelMedium.copy(textAlign = TextAlign.Center),

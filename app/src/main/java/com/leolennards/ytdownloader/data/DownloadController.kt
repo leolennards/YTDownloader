@@ -306,7 +306,7 @@ object DownloadController {
                 return@launch
             }
             try {
-                val request = YoutubeDLRequest(url)
+                val request = withCookies(YoutubeDLRequest(url))
                 request.addOption("--flat-playlist")
                 request.addOption("--playlist-end", MAX_PLAYLIST.toString())
                 request.addOption("--print", "%(url)s\t%(title)s\t%(playlist_title)s")
@@ -421,7 +421,7 @@ object DownloadController {
             val title = if (format == MediaFormat.MP3) cleanMusicTitle(rawTitle) else rawTitle
             update(id) { it.copy(title = title, artist = artist, step = JobStep.Downloading) }
 
-            val request = YoutubeDLRequest(url)
+            val request = withCookies(YoutubeDLRequest(url))
             request.addOption("--no-playlist")
             request.addOption("-o", File(dir, "$id.%(ext)s").absolutePath)
             // download a few fragments at once, much faster on youtube
@@ -570,7 +570,13 @@ object DownloadController {
         }
     }
 
-    private fun singleVideo(url: String) = YoutubeDLRequest(url).apply { addOption("--no-playlist") }
+    private fun singleVideo(url: String) = withCookies(YoutubeDLRequest(url)).apply { addOption("--no-playlist") }
+
+    // adds the user's login cookies (from settings) for sites that need them, like instagram
+    private fun withCookies(request: YoutubeDLRequest): YoutubeDLRequest {
+        if (CookieStore.hasCookies.value) request.addOption("--cookies", CookieStore.file().absolutePath)
+        return request
+    }
 
     private fun saveToMediaStore(file: File, title: String, format: MediaFormat, folder: String?): Uri {
         val isAudio = format == MediaFormat.MP3

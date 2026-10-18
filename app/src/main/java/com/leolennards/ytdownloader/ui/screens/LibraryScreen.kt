@@ -3,6 +3,19 @@ package com.leolennards.ytdownloader.ui.screens
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridItemSpanScope
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.ui.graphics.Color
+import com.leolennards.ytdownloader.data.formatSize
+import com.leolennards.ytdownloader.ui.components.Artwork
+import com.leolennards.ytdownloader.ui.components.Equalizer
+import com.leolennards.ytdownloader.ui.components.ItemMenu
+import com.leolennards.ytdownloader.ui.components.sharedArt
+import com.leolennards.ytdownloader.ui.theme.ytClickable
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.material3.SwipeToDismissBox
@@ -23,8 +36,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -79,6 +90,8 @@ fun LibraryScreen(
     modifier: Modifier = Modifier,
     playingUri: String? = null,
     isPlaying: Boolean = false,
+    grid: Boolean = false,
+    onGridChange: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
     val filter = when (filterIndex) {
@@ -93,7 +106,12 @@ fun LibraryScreen(
     val visibleJobs = jobs.filter { it.status != JobStatus.Done && (filter == null || it.format == filter) }
     val activeCount = visibleJobs.count { it.isActive }
 
-    LazyColumn(
+    val full: LazyGridItemSpanScope.() -> GridItemSpan = { GridItemSpan(maxLineSpan) }
+    val songs = items.count { it.format == MediaFormat.MP3 }
+    val videos = items.size - songs
+
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(2),
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(
             start = YtDimens.ScreenPadding,
@@ -101,20 +119,35 @@ fun LibraryScreen(
             top = 24.dp,
             bottom = LocalBottomClearance.current,
         ),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        item(key = "header") {
-            ScreenHeader(
-                eyebrow = "Your downloads",
-                title = "Library",
-                subtitle = when (items.size) {
-                    0 -> "Everything you save shows up here."
-                    1 -> "1 file saved on this phone."
-                    else -> "${items.size} files saved on this phone."
-                },
-                modifier = Modifier.staggeredEntrance(0, "library-0"),
-            )
+        item(key = "header", span = full) {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.staggeredEntrance(0, "library-0")) {
+                ScreenHeader(
+                    eyebrow = "Your downloads",
+                    title = "Library",
+                    trailing = {
+                        // switches between the list and big covers, the icon shows what you will get
+                        RoundIconButton(
+                            if (grid) R.drawable.ic_list else R.drawable.ic_grid,
+                            if (grid) "Show as a list" else "Show as a grid",
+                            onClick = { onGridChange(!grid) },
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            background = YtTheme.colors.surfaceHigh,
+                        )
+                    },
+                )
+                if (items.isNotEmpty()) {
+                    // the whole collection at a glance
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        StatPill(R.drawable.ic_music, if (songs == 1) "1 song" else "$songs songs")
+                        if (videos > 0) StatPill(R.drawable.ic_video, if (videos == 1) "1 video" else "$videos videos")
+                        StatPill(R.drawable.ic_folder, formatSize(items.sumOf { it.sizeBytes }))
+                    }
+                }
+            }
         }
-        item(key = "controls") {
+        item(key = "controls", span = full) {
             Column(
                 modifier = Modifier
                     .padding(top = YtDimens.SectionGap, bottom = 8.dp)
@@ -127,7 +160,7 @@ fun LibraryScreen(
         }
 
         if (visibleJobs.isNotEmpty()) {
-            item(key = "queue-header") {
+            item(key = "queue-header", span = full) {
                 SectionHeader(
                     if (activeCount > 0) "Downloading · $activeCount" else "Needs attention",
                     modifier = Modifier.animateItem(),
@@ -135,7 +168,7 @@ fun LibraryScreen(
                     onAction = onCancelAll,
                 )
             }
-            items(visibleJobs, key = { it.id }) { job ->
+            items(visibleJobs, key = { it.id }, span = { GridItemSpan(maxLineSpan) }) { job ->
                 QueueJobCard(
                     job = job,
                     onCancel = { onCancelJob(job.id) },
@@ -149,7 +182,7 @@ fun LibraryScreen(
         }
 
         if (filtered.isNotEmpty()) {
-            item(key = "saved-header") {
+            item(key = "saved-header", span = full) {
                 SectionHeader(
                     when {
                         query.isNotBlank() -> "Results"
@@ -160,26 +193,27 @@ fun LibraryScreen(
                 )
             }
         }
-        items(filtered, key = { it.uri ?: it.title + it.meta }) { item ->
+        items(
+            filtered,
+            key = { it.uri ?: it.title + it.meta },
+            span = { if (grid) GridItemSpan(1) else GridItemSpan(maxLineSpan) },
+        ) { item ->
             val uri = item.uri
-            val row = @Composable {
-                DownloadRow(
-                    item = item,
-                    nowPlaying = if (uri != null && uri == playingUri) isPlaying else null,
-                    onClick = uri?.let { { onPlay(item, filtered.filter { it.uri != null }) } },
-                    onShare = uri?.let { { share(context, item, it) } },
-                    onDelete = uri?.let { { onDelete(item) } },
-                )
-            }
-            if (uri == null) {
-                Box(Modifier.animateItem()) { row() }
-            } else {
-                SwipeToDelete(onDelete = { onDelete(item) }, modifier = Modifier.animateItem()) { row() }
+            val nowPlaying = if (uri != null && uri == playingUri) isPlaying else null
+            val play = uri?.let { { onPlay(item, filtered.filter { it.uri != null }) } }
+            val shareIt = uri?.let { { share(context, item, it) } }
+            val deleteIt = uri?.let { { onDelete(item) } }
+            when {
+                grid -> CoverTile(item, nowPlaying, play, shareIt, deleteIt, Modifier.animateItem().padding(bottom = 18.dp))
+                uri == null -> Box(Modifier.animateItem()) { DownloadRow(item) }
+                else -> SwipeToDelete(onDelete = { onDelete(item) }, modifier = Modifier.animateItem()) {
+                    DownloadRow(item = item, nowPlaying = nowPlaying, onClick = play, onShare = shareIt, onDelete = deleteIt)
+                }
             }
         }
 
         if (filtered.isEmpty() && visibleJobs.isEmpty()) {
-            item(key = "empty") {
+            item(key = "empty", span = full) {
                 when {
                     query.isNotBlank() -> EmptyState(
                         R.drawable.ic_search,
@@ -206,7 +240,89 @@ fun LibraryScreen(
             }
         }
     }
+}
 
+// a small rounded label with an icon, for the numbers under the library title
+@Composable
+private fun StatPill(icon: Int, text: String) {
+    Row(
+        modifier = Modifier
+            .background(YtTheme.colors.surfaceHigh, PillShape)
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        YtIcon(icon, tint = YtTheme.colors.accentText, size = 15.dp)
+        Text(text, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
+    }
+}
+
+// a big square cover with the title under it, for the grid view
+@Composable
+private fun CoverTile(
+    item: DownloadItem,
+    nowPlaying: Boolean?,
+    onClick: (() -> Unit)?,
+    onShare: (() -> Unit)?,
+    onDelete: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.then(if (onClick != null) Modifier.ytClickable(pressedScale = 0.96f, onClick = onClick) else Modifier),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
+            Artwork(
+                item.uri,
+                item.format,
+                Modifier.fillMaxSize().sharedArt(item.uri),
+                shape = MaterialTheme.shapes.medium,
+                loadSize = 320.dp,
+                iconSize = 32.dp,
+            )
+            if (nowPlaying != null) {
+                Box(
+                    Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(10.dp)
+                        .background(Color.Black.copy(alpha = 0.6f), PillShape)
+                        .padding(horizontal = 10.dp, vertical = 7.dp),
+                ) {
+                    Equalizer(nowPlaying, color = Color.White, height = 12.dp)
+                }
+            }
+            if (item.format == MediaFormat.MP4) {
+                Box(
+                    Modifier
+                        .align(Alignment.TopStart)
+                        .padding(10.dp)
+                        .background(Color.Black.copy(alpha = 0.6f), PillShape)
+                        .padding(6.dp),
+                ) {
+                    YtIcon(R.drawable.ic_video, tint = Color.White, size = 14.dp)
+                }
+            }
+        }
+        Row(verticalAlignment = Alignment.Top) {
+            Column(Modifier.weight(1f).padding(top = 2.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    item.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = if (nowPlaying != null) YtTheme.colors.accentText else MaterialTheme.colorScheme.onBackground,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    item.artist?.takeIf { it.isNotBlank() } ?: item.format.label,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (onShare != null || onDelete != null) ItemMenu(onShare, onDelete)
+        }
+    }
 }
 
 // swipe a row to the left to delete it. the menu has delete too, for people who do not swipe

@@ -376,6 +376,7 @@ fun YtApp(
                         },
                         onSeeAll = { screen = Screen.Library },
                         onPlay = { play(it, items) },
+                        onNothingToPaste = { showToast("Copy a link first, then tap paste") },
                         queue = summary,
                         recent = items.take(10),
                     )
@@ -433,6 +434,8 @@ fun YtApp(
                         onAddFirst = { screen = Screen.Paste },
                         playingUri = playback.current?.uri,
                         isPlaying = playback.playing,
+                        grid = settings.libraryGrid,
+                        onGridChange = { on -> AppSettings.update { it.copy(libraryGrid = on) } },
                     )
 
                     Screen.Player -> if (playerIsVideo) {

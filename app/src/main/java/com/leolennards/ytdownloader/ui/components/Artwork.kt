@@ -37,13 +37,22 @@ import com.leolennards.ytdownloader.ui.theme.ArtShape
 import com.leolennards.ytdownloader.ui.theme.YtTheme
 import com.leolennards.ytdownloader.ui.theme.motionTween
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
 // reads the cover art out of saved mp3s and a frame out of saved mp4s, and keeps them in memory
 object ArtworkCache {
     private val cache = LruCache<String, ImageBitmap>(160)
-    // files that have no picture, so they are not read again and again
-    private val missing = HashSet<String>()
+    // files that really have no picture, so they are not read again and again.
+    // a read that failed for some other reason is not remembered, it gets tried again
+    private val missing = java.util.Collections.synchronizedSet(HashSet<String>())
+    // reading lots of covers at once makes some phones' media reader fail, so take turns
+    private val readers = Semaphore(3)
+
+    // what reading a file found: a picture, nothing for sure, or an error worth retrying
+    private class Found(val bitmap: Bitmap?, val sure: Boolean)
 
     fun peek(uri: String, sizePx: Int): ImageBitmap? = cache.get("$uri@$sizePx")
 
@@ -51,12 +60,16 @@ object ArtworkCache {
         val key = "$uri@$sizePx"
         cache.get(key)?.let { return it }
         if (key in missing) return null
-        val bitmap = withContext(Dispatchers.IO) { read(context, Uri.parse(uri), format, sizePx) }
-        if (bitmap == null) {
-            missing.add(key)
-            return null
+        repeat(3) { attempt ->
+            val found = readers.withPermit { withContext(Dispatchers.IO) { read(context, Uri.parse(uri), format, sizePx) } }
+            found.bitmap?.let { return it.asImageBitmap().also { image -> cache.put(key, image) } }
+            if (found.sure) {
+                missing.add(key)
+                return null
+            }
+            delay(250L * (attempt + 1))
         }
-        return bitmap.asImageBitmap().also { cache.put(key, it) }
+        return null
     }
 
     // a picture from the internet, like a video thumbnail while it downloads
@@ -82,20 +95,21 @@ object ArtworkCache {
         missing.removeAll { it.startsWith("$uri@") }
     }
 
-    private fun read(context: Context, uri: Uri, format: MediaFormat, sizePx: Int): Bitmap? {
+    private fun read(context: Context, uri: Uri, format: MediaFormat, sizePx: Int): Found {
         if (format == MediaFormat.MP4 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && uri.scheme == "content") {
-            runCatching { return context.contentResolver.loadThumbnail(uri, Size(sizePx, sizePx), null) }
+            runCatching { return Found(context.contentResolver.loadThumbnail(uri, Size(sizePx, sizePx), null), true) }
         }
         val retriever = MediaMetadataRetriever()
         return try {
             retriever.setDataSource(context, uri)
             if (format == MediaFormat.MP3) {
-                retriever.embeddedPicture?.let { decodeSampled(it, sizePx) } ?: coverFallback(context, uri, sizePx)
+                retriever.embeddedPicture?.let { decodeSampled(it, sizePx) }?.let { Found(it, true) }
+                    ?: coverFallback(context, uri, sizePx)
             } else {
-                retriever.getFrameAtTime(1_000_000)
+                Found(retriever.getFrameAtTime(1_000_000), true)
             }
         } catch (e: Exception) {
-            if (format == MediaFormat.MP3) coverFallback(context, uri, sizePx) else null
+            if (format == MediaFormat.MP3) coverFallback(context, uri, sizePx) else Found(null, false)
         } finally {
             runCatching { retriever.release() }
         }
@@ -103,11 +117,11 @@ object ArtworkCache {
 
     // some phones cannot read covers from older files (like the png ones the app used to make),
     // so ask the media library for its copy, and if that fails read the tag ourselves
-    private fun coverFallback(context: Context, uri: Uri, sizePx: Int): Bitmap? {
+    private fun coverFallback(context: Context, uri: Uri, sizePx: Int): Found {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && uri.scheme == "content") {
-            runCatching { return context.contentResolver.loadThumbnail(uri, Size(sizePx, sizePx), null) }
+            runCatching { return Found(context.contentResolver.loadThumbnail(uri, Size(sizePx, sizePx), null), true) }
         }
-        return runCatching {
+        return try {
             val head = context.contentResolver.openInputStream(uri)?.use { input ->
                 val buffer = ByteArray(4 * 1024 * 1024)
                 var read = 0
@@ -117,9 +131,12 @@ object ArtworkCache {
                     read += n
                 }
                 buffer.copyOf(read)
-            } ?: return null
-            Id3Cover.extract(head)?.let { decodeSampled(it, sizePx) }
-        }.getOrNull()
+            } ?: return Found(null, false)
+            val picture = Id3Cover.extract(head) ?: return Found(null, true)
+            decodeSampled(picture, sizePx)?.let { Found(it, true) } ?: Found(null, false)
+        } catch (e: Exception) {
+            Found(null, false)
+        }
     }
 
     private fun decodeSampled(bytes: ByteArray, sizePx: Int): Bitmap? {

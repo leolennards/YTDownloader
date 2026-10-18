@@ -27,7 +27,10 @@ An Android app that saves videos and music from YouTube, TikTok, Instagram, Twit
 - Play your MP3 and MP4 files inside the app, with previous and next, and the next song starts on its own
 - A mini player keeps the music going while you look around the app, with little bars bouncing on the song that is playing
 - Swipe a song to the left to delete it, with an undo button in case it was a mistake
-- If you copied a link, the paste screen offers it straight away
+- If you copied a link, the paste screen offers it straight away, and it says which site a link is from (YouTube, TikTok, Instagram, X, SoundCloud and more)
+- One main button that always does the next thing: paste when the box is empty, then continue
+- The library shows how many songs and videos you have and how much space they take, and can switch to a grid of big covers
+- The player puts a huge blurred copy of the cover behind everything, with a slim seek bar you can tap or drag
 - A small celebration when a download finishes, and a "Saved" message with a play button when you are on another screen
 - The preview shows the exact square cover your MP3 will get before you download it
 - Option to only download on Wi-Fi, so it does not use mobile data
@@ -57,7 +60,7 @@ No navigation library and no database, to keep the dependencies small. The scree
 
 ## The design
 
-Deep graphite and soft paper white backgrounds with one bright amber accent, so the cover art does most of the talking. Bold Manrope titles, rounded cards, pill buttons and a floating nav bar. Every screen has one clear main action, lists show real artwork, and the player takes its background glow from the song's cover. Animations use springs and turn off if the system animations are off.
+Deep graphite and soft paper white backgrounds with an "ember" gradient (amber to coral to pink) on the main button, progress, the app icon and a few highlighted words, so the cover art does most of the talking. Bold Manrope titles, rounded cards, pill buttons and a floating nav bar. Every screen has one clear main action, lists show real artwork, and the player takes its background glow from the song's cover. Animations use springs and turn off if the system animations are off.
 
 ## Tests
 

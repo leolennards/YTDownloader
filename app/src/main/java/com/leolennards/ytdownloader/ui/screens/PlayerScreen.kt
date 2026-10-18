@@ -1,7 +1,22 @@
 package com.leolennards.ytdownloader.ui.screens
 
 import android.net.Uri
+import android.os.Build
+import androidx.compose.foundation.Image
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import android.widget.VideoView
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.leolennards.ytdownloader.ui.theme.PillShape
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -22,8 +37,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -110,6 +123,7 @@ fun MusicPlayerScreen(
 
     PlayerFrame(
         glow = glow,
+        backdrop = art,
         eyebrow = if (state.queue.size > 1) "Playing ${state.index + 1} of ${state.queue.size}" else "Now playing",
         item = item,
         controls = Controls(
@@ -128,6 +142,9 @@ fun MusicPlayerScreen(
     ) {
         // the cover breathes a little: full size while playing, a bit smaller when paused
         val scale by animateFloatAsState(if (state.playing) 1f else 0.88f, motionSpring(dampingRatio = 0.7f), label = "artScale")
+        // the biggest square that fits, so it never spills past the screen edges
+        BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        val side = minOf(maxWidth * 0.92f, maxHeight)
         AnimatedContent(
             targetState = item,
             transitionSpec = { fadeIn(ytTween(motion, Motion.Standard)) togetherWith fadeOut(ytTween(motion, Motion.Micro)) },
@@ -140,8 +157,7 @@ fun MusicPlayerScreen(
                 shape = MaterialTheme.shapes.large,
                 iconSize = 64.dp,
                 modifier = Modifier
-                    .fillMaxHeight()
-                    .aspectRatio(1f, matchHeightConstraintsFirst = true)
+                    .size(side)
                     .sharedArt(shown.uri)
                     .graphicsLayer {
                         scaleX = scale
@@ -151,6 +167,7 @@ fun MusicPlayerScreen(
             )
         }
     }
+        }
 }
 
 // full screen video player, walks through the videos it was opened from
@@ -210,6 +227,8 @@ private fun PlayerFrame(
     controls: Controls,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    // the cover, shown huge and blurred behind everything (android 12 and newer)
+    backdrop: ImageBitmap? = null,
     media: @Composable () -> Unit,
 ) {
     val haptics = rememberHaptics()
@@ -217,16 +236,51 @@ private fun PlayerFrame(
     var dragging by remember { mutableStateOf(false) }
     var dragValue by remember { mutableFloatStateOf(0f) }
 
+    val background = MaterialTheme.colorScheme.background
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
                     0f to glow.copy(alpha = 0.42f),
-                    0.7f to MaterialTheme.colorScheme.background,
+                    0.7f to background,
                 ),
             ),
     ) {
+        if (backdrop != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            AnimatedContent(
+                targetState = backdrop,
+                transitionSpec = { fadeIn(ytTween(motion, Motion.Screen)) togetherWith fadeOut(ytTween(motion, Motion.Screen)) },
+                label = "backdrop",
+            ) { image ->
+                Image(
+                    bitmap = image,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            scaleX = 1.3f
+                            scaleY = 1.3f
+                            alpha = 0.75f
+                        }
+                        .blur(70.dp, BlurredEdgeTreatment.Unbounded),
+                )
+            }
+            // fades the picture into the page so the text stays easy to read
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            0f to background.copy(alpha = 0.25f),
+                            0.45f to background.copy(alpha = 0.55f),
+                            0.8f to background.copy(alpha = 0.95f),
+                            1f to background,
+                        ),
+                    ),
+            )
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -274,22 +328,17 @@ private fun PlayerFrame(
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 val total = controls.durationMs.coerceAtLeast(1).toFloat()
                 val shown = if (dragging) dragValue else controls.positionMs.toFloat()
-                Slider(
-                    value = shown.coerceIn(0f, total),
-                    onValueChange = {
+                SeekBar(
+                    fraction = (shown / total).coerceIn(0f, 1f),
+                    dragging = dragging,
+                    onDrag = { f ->
                         dragging = true
-                        dragValue = it
+                        dragValue = f * total
                     },
-                    onValueChangeFinished = {
+                    onRelease = {
                         controls.onSeek(dragValue.toInt())
                         dragging = false
                     },
-                    valueRange = 0f..total,
-                    colors = SliderDefaults.colors(
-                        thumbColor = MaterialTheme.colorScheme.onBackground,
-                        activeTrackColor = MaterialTheme.colorScheme.onBackground,
-                        inactiveTrackColor = YtTheme.colors.track,
-                    ),
                 )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(
@@ -344,6 +393,51 @@ private fun PlayerFrame(
                 SkipButton(R.drawable.ic_skip_next, "Next", enabled = controls.hasNext, onClick = controls.onNext)
             }
         }
+    }
+}
+
+// a slim seek bar: gradient fill, a dot that grows while you drag, tap anywhere to jump there
+@Composable
+private fun SeekBar(fraction: Float, dragging: Boolean, onDrag: (Float) -> Unit, onRelease: () -> Unit) {
+    val haptics = rememberHaptics()
+    val dot by animateFloatAsState(if (dragging) 1f else 0f, motionSpring(dampingRatio = 0.6f), label = "seekDot")
+    val trackColor = YtTheme.colors.track
+    val brand = YtTheme.brandHorizontal
+    val thumb = MaterialTheme.colorScheme.onBackground
+    BoxWithConstraints(
+        Modifier
+            .fillMaxWidth()
+            .height(32.dp)
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = { offset ->
+                        haptics.tick()
+                        onDrag((offset.x / size.width).coerceIn(0f, 1f))
+                        tryAwaitRelease()
+                        onRelease()
+                    },
+                )
+            }
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragEnd = onRelease,
+                    onDragCancel = onRelease,
+                ) { change, _ -> onDrag((change.position.x / size.width).coerceIn(0f, 1f)) }
+            }
+            .semantics { contentDescription = "Seek" },
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        val height = 4.dp + 2.dp * dot
+        Box(Modifier.fillMaxWidth().height(height).background(trackColor, PillShape))
+        Box(Modifier.fillMaxWidth(fraction).height(height).background(brand, PillShape))
+        val dotSize = 12.dp + 8.dp * dot
+        Box(
+            Modifier
+                .offset(x = (maxWidth - dotSize) * fraction)
+                .size(dotSize)
+                .shadow(4.dp, PillShape)
+                .background(thumb, PillShape),
+        )
     }
 }
 

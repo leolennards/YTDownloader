@@ -42,6 +42,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -169,7 +171,8 @@ fun DownloadingScreen(
                 if (!failed) {
                     Text(
                         "${(animated * 100).roundToInt()}%",
-                        style = MaterialTheme.typography.displayLarge,
+                        // the number glows in the brand colors while it runs, and turns green when saved
+                        style = if (done) MaterialTheme.typography.displayLarge else MaterialTheme.typography.displayLarge.copy(brush = YtTheme.brand),
                         color = if (done) YtTheme.colors.success else MaterialTheme.colorScheme.onBackground,
                     )
                 }
@@ -258,20 +261,22 @@ private fun ArtRing(progress: Float, done: Boolean, failed: Boolean, content: @C
             },
         contentAlignment = Alignment.Center,
     ) {
+        // while it runs the arc uses the brand gradient, done turns it green and a failure red
+        val ember = YtTheme.colors.ember
+        val plain by animateFloatAsState(if (done || failed) 1f else 0f, motionTween(), label = "ringPlain")
         Canvas(Modifier.fillMaxSize()) {
             val stroke = 8.dp.toPx()
             val topLeft = Offset(stroke / 2, stroke / 2)
             val arcSize = Size(size.width - stroke, size.height - stroke)
+            val sweep = 360f * (if (failed) 1f else animated)
             drawArc(track, -90f, 360f, false, topLeft, arcSize, style = Stroke(stroke))
-            drawArc(
-                color,
-                -90f,
-                360f * (if (failed) 1f else animated),
-                false,
-                topLeft,
-                arcSize,
-                style = Stroke(stroke, cap = StrokeCap.Round),
-            )
+            rotate(-90f) {
+                val gradient = Brush.sweepGradient(ember + ember.first())
+                // a wide soft copy underneath makes the arc glow
+                drawArc(gradient, 0f, sweep, false, topLeft, arcSize, alpha = 0.22f * (1 - plain), style = Stroke(stroke * 3.2f, cap = StrokeCap.Round))
+                drawArc(gradient, 0f, sweep, false, topLeft, arcSize, alpha = 1 - plain, style = Stroke(stroke, cap = StrokeCap.Round))
+                drawArc(color, 0f, sweep, false, topLeft, arcSize, alpha = plain, style = Stroke(stroke, cap = StrokeCap.Round))
+            }
         }
         Box(Modifier.size(196.dp).clip(PillShape)) {
             content()

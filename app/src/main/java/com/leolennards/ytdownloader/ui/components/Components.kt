@@ -15,6 +15,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -56,6 +57,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -76,6 +79,7 @@ import com.leolennards.ytdownloader.ui.theme.ArtShape
 import com.leolennards.ytdownloader.ui.theme.EyebrowStyle
 import com.leolennards.ytdownloader.ui.theme.LocalMotionEnabled
 import com.leolennards.ytdownloader.ui.theme.Motion
+import com.leolennards.ytdownloader.ui.theme.OnAccent
 import com.leolennards.ytdownloader.ui.theme.PillShape
 import com.leolennards.ytdownloader.ui.theme.YtDimens
 import com.leolennards.ytdownloader.ui.theme.YtTheme
@@ -146,9 +150,12 @@ fun ScreenHeader(
     title: String,
     modifier: Modifier = Modifier,
     subtitle: String? = null,
+    // a word in the title painted with the brand gradient
+    highlight: String? = null,
     trailing: (@Composable RowScope.() -> Unit)? = null,
 ) {
     val motion = LocalMotionEnabled.current
+    val brand = YtTheme.brand
     Row(modifier = modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             AnimatedContent(
@@ -163,8 +170,12 @@ fun ScreenHeader(
                 transitionSpec = { fadeIn(ytTween(motion)) togetherWith fadeOut(ytTween(motion, Motion.Micro)) },
                 label = "title",
             ) { text ->
+                val start = highlight?.let { text.indexOf(it) } ?: -1
                 Text(
-                    text,
+                    buildAnnotatedString {
+                        append(text)
+                        if (start >= 0) addStyle(SpanStyle(brush = brand), start, start + highlight!!.length)
+                    },
                     style = MaterialTheme.typography.headlineLarge,
                     color = MaterialTheme.colorScheme.onBackground,
                 )
@@ -322,7 +333,7 @@ fun ChoicePill(text: String, selected: Boolean, onClick: () -> Unit, modifier: M
     }
 }
 
-// the main action on a screen, amber
+// the main action on a screen: the brand gradient with a soft glow under it
 @Composable
 fun PrimaryButton(
     text: String,
@@ -333,30 +344,40 @@ fun PrimaryButton(
 ) {
     val source = remember { MutableInteractionSource() }
     val haptics = rememberHaptics()
-    Button(
-        onClick = {
-            haptics.tick()
-            onClick()
-        },
+    val fill by animateFloatAsState(if (enabled) 1f else 0f, motionTween(), label = "primaryFill")
+    val content by animateColorAsState(
+        if (enabled) OnAccent else MaterialTheme.colorScheme.onSurfaceVariant,
+        motionTween(),
+        label = "primaryContent",
+    )
+    val glow = YtTheme.colors.ember[1]
+    Box(
         modifier = modifier
             .height(YtDimens.PrimaryButtonHeight)
-            .pressScale(source),
-        enabled = enabled,
-        shape = PillShape,
-        interactionSource = source,
-        contentPadding = PaddingValues(horizontal = 24.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary,
-            disabledContainerColor = YtTheme.colors.surfaceHigh,
-            disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        ),
+            .pressScale(source)
+            .shadow((14 * fill).dp, PillShape, ambientColor = glow, spotColor = glow)
+            .clip(PillShape)
+            .background(YtTheme.colors.surfaceHigh)
+            .background(YtTheme.brand, alpha = fill)
+            .clickable(
+                interactionSource = source,
+                indication = null,
+                enabled = enabled,
+                role = Role.Button,
+            ) {
+                haptics.tick()
+                onClick()
+            }
+            .padding(horizontal = 24.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        if (icon != null) {
-            YtIcon(icon)
-            Spacer(Modifier.width(10.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (icon != null) {
+                YtIcon(icon, tint = content)
+                Spacer(Modifier.width(10.dp))
+            }
+            Text(text, style = MaterialTheme.typography.titleMedium, color = content, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        Text(text, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -440,7 +461,7 @@ fun YtProgressBar(progress: Float, modifier: Modifier = Modifier, height: Dp = 6
             Modifier
                 .fillMaxWidth(animated)
                 .height(height)
-                .background(MaterialTheme.colorScheme.primary, PillShape),
+                .background(YtTheme.brandHorizontal, PillShape),
         )
     }
 }
@@ -498,16 +519,17 @@ fun DownloadRow(
             )
         }
         if (onShare != null || onDelete != null) {
-            RowMenu(onShare = onShare, onDelete = onDelete)
+            ItemMenu(onShare = onShare, onDelete = onDelete)
         }
     }
 }
 
+// the ⋮ button with share and delete, used on library rows and tiles
 @Composable
-private fun RowMenu(onShare: (() -> Unit)?, onDelete: (() -> Unit)?) {
+fun ItemMenu(onShare: (() -> Unit)?, onDelete: (() -> Unit)?, tint: Color = MaterialTheme.colorScheme.onSurfaceVariant) {
     var open by remember { mutableStateOf(false) }
     Box {
-        RoundIconButton(R.drawable.ic_more, "More options", onClick = { open = true })
+        RoundIconButton(R.drawable.ic_more, "More options", onClick = { open = true }, tint = tint)
         DropdownMenu(
             expanded = open,
             onDismissRequest = { open = false },

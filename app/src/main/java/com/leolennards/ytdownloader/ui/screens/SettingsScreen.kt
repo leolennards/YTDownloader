@@ -1,6 +1,13 @@
 package com.leolennards.ytdownloader.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalContext
+import com.leolennards.ytdownloader.R
+import com.leolennards.ytdownloader.ui.components.YtIcon
+import com.leolennards.ytdownloader.ui.theme.OnAccent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -134,6 +141,50 @@ private fun SwitchRow(title: String, description: String, checked: Boolean, onCh
     }
 }
 
+// the app's icon, name and versions, at the top of settings
+@Composable
+private fun AboutCard(engineVersion: String?, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val version = remember {
+        runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "1.0"
+    }
+    YtCard(modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.linearGradient(listOf(YtTheme.colors.ember[0].copy(alpha = 0.14f), YtTheme.colors.ember[2].copy(alpha = 0.10f))),
+                )
+                .padding(YtDimens.CardPadding),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Box(
+                Modifier
+                    .size(56.dp)
+                    .shadow(12.dp, MaterialTheme.shapes.small, ambientColor = YtTheme.colors.ember[1], spotColor = YtTheme.colors.ember[1])
+                    .background(YtTheme.brand, MaterialTheme.shapes.small),
+                contentAlignment = Alignment.Center,
+            ) {
+                YtIcon(R.drawable.ic_download, tint = OnAccent, size = 28.dp)
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("AnyGrab", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
+                Text(
+                    "Version $version · yt-dlp ${engineVersion ?: "checking"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    "Everything runs on your phone. No accounts, no servers.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = YtTheme.colors.accentText,
+                )
+            }
+        }
+    }
+}
+
 // row of pills for choosing a video quality
 @Composable
 private fun QualityPills(selectedHeight: Int, onSelect: (Int) -> Unit) {
@@ -180,6 +231,8 @@ fun SettingsScreen(
             subtitle = "Make AnyGrab work the way you like.",
             modifier = Modifier.staggeredEntrance(0, "settings-0"),
         )
+
+        AboutCard(engineVersion, Modifier.staggeredEntrance(1, "settings-about"))
 
         SettingsGroup("Appearance", 1) {
             SettingBlock("Theme", "System follows your phone's setting.") {

@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
 private val LightColorScheme = lightColorScheme(
@@ -76,6 +77,18 @@ object YtTheme {
         @Composable
         @ReadOnlyComposable
         get() = LocalYtColors.current
+
+    // diagonal amber to pink, for main buttons, progress and highlighted words
+    val brand: Brush
+        @Composable
+        @ReadOnlyComposable
+        get() = Brush.linearGradient(LocalYtColors.current.ember)
+
+    // the same colors going left to right, for thin things like progress bars
+    val brandHorizontal: Brush
+        @Composable
+        @ReadOnlyComposable
+        get() = Brush.horizontalGradient(LocalYtColors.current.ember)
 }
 
 @Composable

@@ -14,7 +14,7 @@ val LightHairline = Color(0xFFE2DFD7)
 val LightInk = Color(0xFF121212)
 val LightMuted = Color(0xFF66635C)
 val LightAccent = Color(0xFFF2A81D)       // buttons and progress
-val LightAccentText = Color(0xFF8A5800)   // amber for text and icons (dark enough to read on white)
+val LightAccentText = Color(0xFFA9470C)   // burnt orange for text and icons (dark enough to read on white)
 
 // ---- dark: deep graphite, warm white, bright amber ----
 val DarkBackground = Color(0xFF0B0B0D)
@@ -27,9 +27,14 @@ val DarkHairline = Color(0xFF242428)
 val DarkInk = Color(0xFFF5F3EE)
 val DarkMuted = Color(0xFF9C9990)
 val DarkAccent = Color(0xFFFFB938)
-val DarkAccentText = Color(0xFFFFC55C)
+val DarkAccentText = Color(0xFFFFB866)
 
 val OnAccent = Color(0xFF1B1205)
+
+// the brand gradient, amber to coral to pink, for the things that matter most on a screen
+val EmberAmber = Color(0xFFFFC145)
+val EmberCoral = Color(0xFFFF7A45)
+val EmberPink = Color(0xFFF2437A)
 
 val ErrorLight = Color(0xFFB3261E)
 val ErrorDark = Color(0xFFFF8A80)
@@ -47,6 +52,8 @@ data class YtExtraColors(
     val placeholder: Color,
     val surfaceHigh: Color,
     val success: Color,
+    // the brand gradient colors, use YtTheme.brand for the brush
+    val ember: List<Color> = listOf(EmberAmber, EmberCoral, EmberPink),
 )
 
 val LightExtraColors = YtExtraColors(

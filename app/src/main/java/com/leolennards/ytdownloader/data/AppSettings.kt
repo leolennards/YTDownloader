@@ -26,6 +26,8 @@ data class SettingsState(
     val wifiOnly: Boolean = false,
     // 0 = follow the phone, 1 = light, 2 = dark
     val themeMode: Int = 0,
+    // library shows big covers in a grid instead of a list
+    val libraryGrid: Boolean = false,
 )
 
 // keeps the settings in SharedPreferences
@@ -50,6 +52,7 @@ object AppSettings {
             maxParallel = prefs.getInt("maxParallel", defaults.maxParallel).coerceIn(1, 3),
             wifiOnly = prefs.getBoolean("wifiOnly", defaults.wifiOnly),
             themeMode = prefs.getInt("themeMode", defaults.themeMode).coerceIn(0, 2),
+            libraryGrid = prefs.getBoolean("libraryGrid", defaults.libraryGrid),
         )
     }
 
@@ -66,6 +69,7 @@ object AppSettings {
             .putInt("maxParallel", s.maxParallel)
             .putBoolean("wifiOnly", s.wifiOnly)
             .putInt("themeMode", s.themeMode)
+            .putBoolean("libraryGrid", s.libraryGrid)
             .apply()
     }
 }

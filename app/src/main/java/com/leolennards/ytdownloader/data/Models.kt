@@ -15,6 +15,7 @@ data class DownloadItem(
     val meta: String,
     val uri: String? = null,
     val artist: String? = null,
+    val sizeBytes: Long = 0,
 )
 
 // a finished download, saved so the library is still there after restarting
@@ -35,6 +36,7 @@ fun HistoryEntry.toItem() = DownloadItem(
         .joinToString(" · "),
     uri = uri,
     artist = artist,
+    sizeBytes = sizeBytes,
 )
 
 class VideoMeta(

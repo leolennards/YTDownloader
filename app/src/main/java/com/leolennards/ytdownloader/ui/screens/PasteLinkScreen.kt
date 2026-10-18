@@ -3,6 +3,13 @@ package com.leolennards.ytdownloader.ui.screens
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.ClipDescription
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.graphics.graphicsLayer
+import com.leolennards.ytdownloader.data.Platform
+import com.leolennards.ytdownloader.ui.theme.PillShape
+import com.leolennards.ytdownloader.ui.theme.motionSpring
 import android.os.Build
 import android.view.textclassifier.TextClassifier
 import androidx.compose.animation.core.LinearEasing
@@ -100,6 +107,8 @@ fun PasteLinkScreen(
     onSeeAll: () -> Unit,
     onPlay: (DownloadItem) -> Unit,
     queue: QueueSummary?,
+    // the clipboard was empty when paste was tapped
+    onNothingToPaste: () -> Unit = {},
     recent: List<DownloadItem>,
     modifier: Modifier = Modifier,
 ) {
@@ -109,7 +118,11 @@ fun PasteLinkScreen(
     val playlistCount = links.count { isPlaylistLink(it) }
     // one normal link opens the preview, anything else goes straight to the queue
     val single = links.size == 1 && playlistCount == 0
+    // which site the link is from, so it can be named and its chip can light up
+    val platform = links.singleOrNull()?.let { Platform.of(it) }
     val hint = when {
+        single && platform != null -> "${platform.label} link, ready to grab"
+        single -> "Link found, ready to grab"
         links.size == 1 && playlistCount == 1 -> "Playlist found. Every track in it will be added."
         links.size > 1 && playlistCount > 0 -> "${links.size} links found, including $playlistCount playlist"
         links.size > 1 -> "${links.size} links found"
@@ -140,14 +153,21 @@ fun PasteLinkScreen(
     ) {
         Box {
             AmbientGlow(Modifier.matchParentSize())
-            ScreenHeader(
-                eyebrow = "AnyGrab",
-                title = "Grab anything",
-                subtitle = "Paste a link from YouTube, TikTok, Instagram, X, SoundCloud and more.",
-                modifier = Modifier
-                    .padding(horizontal = YtDimens.ScreenPadding)
-                    .staggeredEntrance(0, "paste-0"),
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                ScreenHeader(
+                    eyebrow = "AnyGrab",
+                    title = "Grab anything",
+                    highlight = "anything",
+                    subtitle = "Music and videos from almost anywhere, saved straight to your phone.",
+                    modifier = Modifier
+                        .padding(horizontal = YtDimens.ScreenPadding)
+                        .staggeredEntrance(0, "paste-0"),
+                )
+                PlatformRow(
+                    detected = platform,
+                    modifier = Modifier.staggeredEntrance(1, "paste-platforms"),
+                )
+            }
         }
 
         YtCard(
@@ -227,24 +247,21 @@ fun PasteLinkScreen(
                         YtIcon(R.drawable.ic_arrow_right, tint = YtTheme.colors.accentText, size = 18.dp)
                     }
                 }
-                SecondaryButton(
-                    text = "Paste from clipboard",
-                    icon = R.drawable.ic_clipboard,
-                    onClick = {
-                        readClipboard(context)?.let {
-                            haptics.confirm()
-                            onUrlChange(it)
-                        }
-                    },
-                    contentColor = YtTheme.colors.accentText,
-                    modifier = Modifier.fillMaxWidth(),
-                )
                 AnimatedVisibility(visible = hint != null, enter = ytEnter(), exit = ytExit()) {
-                    Text(
-                        lastHint[0],
-                        style = MaterialTheme.typography.labelMedium,
-                        color = if (links.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else YtTheme.colors.accentText,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (links.isNotEmpty()) {
+                            Box(
+                                Modifier
+                                    .size(8.dp)
+                                    .background(platform?.let { Color(it.color) } ?: YtTheme.colors.success, PillShape),
+                            )
+                        }
+                        Text(
+                            lastHint[0],
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (links.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
                 }
             }
         }
@@ -270,16 +287,34 @@ fun PasteLinkScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
+            // one button that always does the next thing: paste when the box is empty, then go
             PrimaryButton(
                 text = when {
-                    links.isEmpty() -> "Paste a link to start"
+                    links.isEmpty() -> "Paste link"
                     single -> "Continue"
                     links.size == 1 -> "Add playlist to queue"
                     else -> "Add ${links.size} to queue"
                 },
-                icon = if (single) R.drawable.ic_arrow_right else if (links.isNotEmpty()) R.drawable.ic_download else null,
-                onClick = { if (single) onFetch() else onQueue(links) },
-                enabled = links.isNotEmpty(),
+                icon = when {
+                    links.isEmpty() -> R.drawable.ic_clipboard
+                    single -> R.drawable.ic_arrow_right
+                    else -> R.drawable.ic_download
+                },
+                onClick = {
+                    when {
+                        links.isEmpty() -> {
+                            val pasted = readClipboard(context)
+                            if (pasted.isNullOrBlank()) {
+                                onNothingToPaste()
+                            } else {
+                                haptics.confirm()
+                                onUrlChange(pasted)
+                            }
+                        }
+                        single -> onFetch()
+                        else -> onQueue(links)
+                    }
+                },
                 modifier = Modifier.fillMaxWidth(),
             )
             AnimatedVisibility(visible = single, enter = ytEnter(), exit = ytExit()) {
@@ -386,6 +421,52 @@ private fun RecentTile(item: DownloadItem, onClick: () -> Unit) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+    }
+}
+
+// the sites people grab from most, as small chips. the one a pasted link is from lights up
+@Composable
+private fun PlatformRow(detected: Platform?, modifier: Modifier = Modifier) {
+    LazyRow(
+        modifier = modifier,
+        contentPadding = PaddingValues(horizontal = YtDimens.ScreenPadding),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        val shown = Platform.featured.let { if (detected != null && detected !in it) listOf(detected) + it else it }
+        items(shown, key = { it.name }) { platform ->
+            val on = detected == platform
+            val dim by animateFloatAsState(if (detected == null || on) 1f else 0.4f, motionTween(), label = "chipDim")
+            val scale by animateFloatAsState(if (on) 1.06f else 1f, motionSpring(dampingRatio = 0.5f), label = "chipPop")
+            Row(
+                modifier = Modifier
+                    .animateItem()
+                    .graphicsLayer {
+                        alpha = dim
+                        scaleX = scale
+                        scaleY = scale
+                    }
+                    .height(34.dp)
+                    .background(if (on) YtTheme.colors.tonal else YtTheme.colors.surfaceHigh, PillShape)
+                    .then(if (on) Modifier.border(1.5.dp, YtTheme.brand, PillShape) else Modifier)
+                    .padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+            ) {
+                Box(Modifier.size(7.dp).background(Color(platform.color), PillShape))
+                Text(platform.label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
+            }
+        }
+        item(key = "more") {
+            Box(
+                Modifier
+                    .height(34.dp)
+                    .background(YtTheme.colors.surfaceHigh, PillShape)
+                    .padding(horizontal = 12.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("+ 1,000 more", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- gold download arrow with a tray, kept inside the middle 66dp so it is never cropped -->
+<!-- dark download arrow with a tray, kept inside the middle 66dp so it is never cropped -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
@@ -8,21 +8,21 @@
     <path
         android:fillColor="#00000000"
         android:pathData="M54,33L54,62"
-        android:strokeColor="#FFB938"
+        android:strokeColor="#1B1205"
         android:strokeLineCap="round"
-        android:strokeWidth="6" />
+        android:strokeWidth="7" />
     <path
         android:fillColor="#00000000"
         android:pathData="M42,51L54,63L66,51"
-        android:strokeColor="#FFB938"
+        android:strokeColor="#1B1205"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:strokeWidth="6" />
+        android:strokeWidth="7" />
     <path
         android:fillColor="#00000000"
         android:pathData="M38,67L38,75L70,75L70,67"
-        android:strokeColor="#FFB938"
+        android:strokeColor="#1B1205"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:strokeWidth="6" />
+        android:strokeWidth="7" />
 </vector>

@@ -158,6 +158,7 @@ fun PasteLinkScreen(
                     eyebrow = "AnyGrab",
                     title = "Grab anything",
                     highlight = "anything",
+                    showMark = true,
                     subtitle = "Music and videos from almost anywhere, saved straight to your phone.",
                     modifier = Modifier
                         .padding(horizontal = YtDimens.ScreenPadding)
@@ -368,6 +369,15 @@ fun PasteLinkScreen(
             }
         }
 
+        // new here: teach the fastest way in, sharing straight from another app
+        if (recent.isEmpty() && queue == null) {
+            ShareTip(
+                Modifier
+                    .padding(horizontal = YtDimens.ScreenPadding)
+                    .staggeredEntrance(4, "paste-tip"),
+            )
+        }
+
         if (recent.isNotEmpty()) {
             Column(modifier = Modifier.staggeredEntrance(4, "paste-4")) {
                 SectionHeader(
@@ -421,6 +431,32 @@ private fun RecentTile(item: DownloadItem, onClick: () -> Unit) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+    }
+}
+
+// shows the share sheet shortcut: in youtube or tiktok, tap Share and pick AnyGrab
+@Composable
+private fun ShareTip(modifier: Modifier = Modifier) {
+    YtCard(modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .background(
+                    Brush.linearGradient(listOf(YtTheme.colors.ember[0].copy(alpha = 0.10f), YtTheme.colors.ember[2].copy(alpha = 0.08f))),
+                )
+                .padding(YtDimens.CardPadding),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconTile(R.drawable.ic_share)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("Faster: share to AnyGrab", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+                Text(
+                    "In YouTube, TikTok or any app, tap Share and pick AnyGrab. The link lands right here.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

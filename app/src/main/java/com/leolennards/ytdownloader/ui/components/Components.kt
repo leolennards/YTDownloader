@@ -13,6 +13,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -152,6 +153,8 @@ fun ScreenHeader(
     subtitle: String? = null,
     // a word in the title painted with the brand gradient
     highlight: String? = null,
+    // the app's mark next to the small label, for the home screen
+    showMark: Boolean = false,
     trailing: (@Composable RowScope.() -> Unit)? = null,
 ) {
     val motion = LocalMotionEnabled.current
@@ -163,7 +166,12 @@ fun ScreenHeader(
                 transitionSpec = { fadeIn(ytTween(motion)) togetherWith fadeOut(ytTween(motion, Motion.Micro)) },
                 label = "eyebrow",
             ) { text ->
-                EyebrowLabel(text)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (showMark) {
+                        Image(painterResource(R.drawable.ic_brand_mark), contentDescription = null, modifier = Modifier.size(16.dp))
+                    }
+                    EyebrowLabel(text)
+                }
             }
             AnimatedContent(
                 targetState = title,

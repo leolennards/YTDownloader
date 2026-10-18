@@ -55,6 +55,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.leolennards.ytdownloader.MainActivity
 import com.leolennards.ytdownloader.data.AppSettings
 import com.leolennards.ytdownloader.data.DownloadController
 import com.leolennards.ytdownloader.data.DownloadItem
@@ -104,6 +105,9 @@ enum class Screen(val depth: Int) {
 fun YtApp(
     sharedText: String? = null,
     onSharedHandled: () -> Unit = {},
+    // which screen a home screen shortcut asked for
+    shortcut: String? = null,
+    onShortcutHandled: () -> Unit = {},
     // closes the app screen, used to go back to the app a link was shared from
     onFinish: () -> Unit = {},
     hasCookies: Boolean = false,
@@ -246,6 +250,14 @@ fun YtApp(
             }
             onSharedHandled()
         }
+    }
+
+    LaunchedEffect(shortcut) {
+        when (shortcut) {
+            MainActivity.ACTION_NEW_DOWNLOAD -> screen = Screen.Paste
+            MainActivity.ACTION_OPEN_LIBRARY -> screen = Screen.Library
+        }
+        if (shortcut != null) onShortcutHandled()
     }
 
     fun play(item: DownloadItem, list: List<DownloadItem>) {

@@ -26,6 +26,8 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     // text shared to the app from another app (like a youtube link), null when there is none
     private var sharedText by mutableStateOf<String?>(null)
+    // a home screen shortcut asked for a screen, see res/xml/shortcuts.xml
+    private var shortcut by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,6 +60,8 @@ class MainActivity : ComponentActivity() {
                 YtApp(
                     sharedText = sharedText,
                     onSharedHandled = { sharedText = null },
+                    shortcut = shortcut,
+                    onShortcutHandled = { shortcut = null },
                     onFinish = { finish() },
                     hasCookies = hasCookies,
                     onPickCookies = { cookiesLauncher.launch(arrayOf("*/*")) },
@@ -74,8 +78,14 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun readShare(intent: Intent?) {
-        if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
-            sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
+        when (intent?.action) {
+            Intent.ACTION_SEND -> if (intent.type == "text/plain") sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
+            ACTION_NEW_DOWNLOAD, ACTION_OPEN_LIBRARY -> shortcut = intent.action
         }
+    }
+
+    companion object {
+        const val ACTION_NEW_DOWNLOAD = "com.leolennards.ytdownloader.NEW_DOWNLOAD"
+        const val ACTION_OPEN_LIBRARY = "com.leolennards.ytdownloader.OPEN_LIBRARY"
     }
 }

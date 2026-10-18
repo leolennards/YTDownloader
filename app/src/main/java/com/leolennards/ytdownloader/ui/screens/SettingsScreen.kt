@@ -3,11 +3,13 @@ package com.leolennards.ytdownloader.ui.screens
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalContext
 import com.leolennards.ytdownloader.R
 import com.leolennards.ytdownloader.ui.components.YtIcon
-import com.leolennards.ytdownloader.ui.theme.OnAccent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -163,10 +165,11 @@ private fun AboutCard(engineVersion: String?, modifier: Modifier = Modifier) {
                 Modifier
                     .size(56.dp)
                     .shadow(12.dp, MaterialTheme.shapes.small, ambientColor = YtTheme.colors.ember[1], spotColor = YtTheme.colors.ember[1])
-                    .background(YtTheme.brand, MaterialTheme.shapes.small),
+                    .background(Color(0xFF141418), MaterialTheme.shapes.small),
                 contentAlignment = Alignment.Center,
             ) {
-                YtIcon(R.drawable.ic_download, tint = OnAccent, size = 28.dp)
+                // the app icon's mark, in its own colors
+                Image(painterResource(R.drawable.ic_brand_mark), contentDescription = null, modifier = Modifier.size(30.dp))
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text("AnyGrab", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)

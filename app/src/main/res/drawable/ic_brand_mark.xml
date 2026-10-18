@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- the AnyGrab mark on its own, cropped tight to the bars, for use inside the app -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="24dp"
+    android:height="23dp"
+    android:viewportWidth="162"
+    android:viewportHeight="156">
+    <group
+        android:translateX="-52"
+        android:translateY="-60">
+        <path android:pathData="M52,73.0 a13.0,13.0 0 0 1 26,0 v26 a13.0,13.0 0 0 1 -26,0 z M86,73.0 a13.0,13.0 0 0 1 26,0 v60 a13.0,13.0 0 0 1 -26,0 z M120,73.0 a13.0,13.0 0 0 1 26,0 v98 a13.0,13.0 0 0 1 -26,0 z M154,73.0 a13.0,13.0 0 0 1 26,0 v60 a13.0,13.0 0 0 1 -26,0 z M188,73.0 a13.0,13.0 0 0 1 26,0 v26 a13.0,13.0 0 0 1 -26,0 z M72.0,196 h122 a10.0,10.0 0 0 1 0,20 h-122 a10.0,10.0 0 0 1 0,-20 z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="52"
+                android:startY="60"
+                android:endX="150"
+                android:endY="216">
+                <item android:offset="0" android:color="#FFFFC145" />
+                <item android:offset="0.5" android:color="#FFFF7A45" />
+                <item android:offset="1" android:color="#FFF2437A" />
+            </gradient>
+        </aapt:attr>
+        </path>
+    </group>
+</vector>

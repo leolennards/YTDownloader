@@ -1,3 +1,5 @@
+<img src="docs/icon.png" width="96" alt="AnyGrab icon">
+
 # AnyGrab
 
 An Android app that saves videos and music from YouTube, TikTok, Instagram, Twitter/X, SoundCloud, and most other sites yt-dlp supports, straight to your phone as MP3 or MP4. Everything runs on the device, there is no server. I built it as a personal project to practise Jetpack Compose and to learn how to run a native tool (yt-dlp) inside an Android app.
@@ -29,6 +31,7 @@ An Android app that saves videos and music from YouTube, TikTok, Instagram, Twit
 - Swipe a song to the left to delete it, with an undo button in case it was a mistake
 - If you copied a link, the paste screen offers it straight away, and it says which site a link is from (YouTube, TikTok, Instagram, X, SoundCloud and more)
 - One main button that always does the next thing: paste when the box is empty, then continue
+- Long press the app icon for shortcuts to a new download or the library
 - The library shows how many songs and videos you have and how much space they take, and can switch to a grid of big covers
 - The player puts a huge blurred copy of the cover behind everything, with a slim seek bar you can tap or drag
 - A small celebration when a download finishes, and a "Saved" message with a play button when you are on another screen

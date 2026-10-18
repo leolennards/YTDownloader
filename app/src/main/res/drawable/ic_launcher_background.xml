@@ -1,22 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- the brand gradient: amber in the top left to coral to pink in the bottom right -->
+<!-- deep graphite with a soft warm glow from the top, so the gradient mark seems lit -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <path
+        android:fillColor="#FF141418"
+        android:pathData="M0,0h108v108h-108z" />
     <path android:pathData="M0,0h108v108h-108z">
         <aapt:attr name="android:fillColor">
             <gradient
-                android:type="linear"
-                android:startX="0"
-                android:startY="0"
-                android:endX="108"
-                android:endY="108">
-                <item android:offset="0" android:color="#FFFFC145" />
-                <item android:offset="0.55" android:color="#FFFF7A45" />
-                <item android:offset="1" android:color="#FFF2437A" />
+                android:type="radial"
+                android:centerX="54"
+                android:centerY="18"
+                android:gradientRadius="70">
+                <item android:offset="0" android:color="#33FF7A45" />
+                <item android:offset="1" android:color="#00FF7A45" />
             </gradient>
         </aapt:attr>
     </path>

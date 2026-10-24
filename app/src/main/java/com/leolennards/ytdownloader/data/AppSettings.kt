@@ -30,6 +30,8 @@ data class SettingsState(
     val libraryGrid: Boolean = false,
     // look up the official album cover (itunes, then deezer) instead of using the youtube thumbnail
     val officialCovers: Boolean = true,
+    // look up the words of songs on lrclib.net, for the player and inside the mp3
+    val lyrics: Boolean = true,
 )
 
 // keeps the settings in SharedPreferences
@@ -56,6 +58,7 @@ object AppSettings {
             themeMode = prefs.getInt("themeMode", defaults.themeMode).coerceIn(0, 2),
             libraryGrid = prefs.getBoolean("libraryGrid", defaults.libraryGrid),
             officialCovers = prefs.getBoolean("officialCovers", defaults.officialCovers),
+            lyrics = prefs.getBoolean("lyrics", defaults.lyrics),
         )
     }
 
@@ -74,6 +77,7 @@ object AppSettings {
             .putInt("themeMode", s.themeMode)
             .putBoolean("libraryGrid", s.libraryGrid)
             .putBoolean("officialCovers", s.officialCovers)
+            .putBoolean("lyrics", s.lyrics)
             .apply()
     }
 }

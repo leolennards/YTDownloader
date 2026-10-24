@@ -432,6 +432,7 @@ object DownloadController {
             Log.w(TAG, "could not delete $uri", e)
             false
         }
+        LyricsStore.forget(app, uri)
         val updated = _history.value.filterNot { it.uri == uri }
         _history.value = updated
         HistoryStore.save(app, updated)
@@ -640,8 +641,18 @@ object DownloadController {
                 val videoId = (if (info?.extractorKey == "Youtube") info.id else null) ?: youtubeId(url)
                 addCover(output, thumb, videoId, info?.thumbnail, title, artistNames(rawTitle, artist))
             }
+            // the words of the song, inside the mp3 for other music apps and kept for the player
+            val lyrics = if (format == MediaFormat.MP3 && AppSettings.state.value.lyrics) {
+                runCatching { LyricsFinder.find(title, artistNames(rawTitle, artist), info?.duration?.toDouble()) }.getOrNull()
+            } else {
+                null
+            }
+            if (lyrics != null) {
+                runCatching { Id3Cover.embedLyrics(output.readBytes(), lyrics.plain)?.let { output.writeBytes(it) } }
+            }
             val size = output.length()
             val uri = saveToMediaStore(output, title, format, job.folder)
+            if (format == MediaFormat.MP3 && AppSettings.state.value.lyrics) LyricsStore.save(app, uri.toString(), lyrics)
 
             val quality = if (format == MediaFormat.MP4) "${height}p" else null
             val entry = HistoryEntry(title, format, quality, size, System.currentTimeMillis(), uri.toString(), artist)
@@ -703,28 +714,56 @@ object DownloadController {
         if (songs.isEmpty()) return
         _coverUpgrade.value = CoverUpgrade(0, songs.size, 0)
         scope.launch {
+            val settings = AppSettings.state.value
             var improved = 0
+            var withLyrics = 0
             songs.forEachIndexed { index, song ->
                 try {
+                    val uri = Uri.parse(song.uri)
                     val artists = artistNames(song.title, song.artist)
-                    val cover = AlbumArt.find(song.title, artists)?.let { CoverArt.encode(it) }
-                    if (cover != null && rewriteCover(Uri.parse(song.uri), cover)) improved++
+                    val cover = if (settings.officialCovers) AlbumArt.find(song.title, artists)?.let { CoverArt.encode(it) } else null
+                    val lyrics = if (settings.lyrics) LyricsFinder.find(song.title, artists, durationOf(uri)) else null
+                    if ((cover != null || lyrics != null) && rewriteTags(uri, cover, lyrics?.plain)) {
+                        if (cover != null) improved++
+                        if (lyrics != null) withLyrics++
+                    }
+                    if (settings.lyrics) LyricsStore.save(app, song.uri, lyrics)
                 } catch (e: Exception) {
-                    Log.w(TAG, "cover upgrade failed for ${song.title}", e)
+                    Log.w(TAG, "upgrade failed for ${song.title}", e)
                 }
-                _coverUpgrade.value = CoverUpgrade(index + 1, songs.size, improved)
+                _coverUpgrade.value = CoverUpgrade(index + 1, songs.size, improved, lyrics = withLyrics)
             }
-            _coverUpgrade.value = CoverUpgrade(songs.size, songs.size, improved, finished = true)
+            _coverUpgrade.value = CoverUpgrade(songs.size, songs.size, improved, finished = true, lyrics = withLyrics)
             if (improved > 0) _coverRevision.update { it + 1 }
         }
     }
 
-    private fun rewriteCover(uri: Uri, jpeg: ByteArray): Boolean {
+    // length of a saved song in seconds, so lyrics with the wrong timing are not used
+    private fun durationOf(uri: Uri): Double? {
+        val retriever = android.media.MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(app, uri)
+            retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toDoubleOrNull()?.div(1000)
+        } catch (e: Exception) {
+            null
+        } finally {
+            runCatching { retriever.release() }
+        }
+    }
+
+    // puts a new cover and/or lyrics in a saved mp3. only the tag at the front changes: the new
+    // file is only written when it still ends with exactly the same audio as before
+    private fun rewriteTags(uri: Uri, jpeg: ByteArray?, lyrics: String?): Boolean {
         val resolver = app.contentResolver
         val original = resolver.openInputStream(uri)?.use { it.readBytes() } ?: return false
-        val tagged = Id3Cover.embed(original, jpeg) ?: return false
-        // the new file must still end with exactly the same sound as before
-        if (tagged.size <= jpeg.size || original.size < 1024) return false
+        if (original.size < 4096) return false
+        var tagged = original
+        if (jpeg != null) tagged = Id3Cover.embed(tagged, jpeg) ?: return false
+        if (lyrics != null) tagged = Id3Cover.embedLyrics(tagged, lyrics) ?: return false
+        val tail = 4096
+        val sameAudio = tagged.size >= tail &&
+            original.copyOfRange(original.size - tail, original.size).contentEquals(tagged.copyOfRange(tagged.size - tail, tagged.size))
+        if (!sameAudio) return false
         resolver.openOutputStream(uri, "wt")?.use { it.write(tagged) } ?: return false
         return true
     }

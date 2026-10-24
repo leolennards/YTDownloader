@@ -124,6 +124,79 @@ object Id3Cover {
 
     // returns the new file bytes, or null if the tag is in a shape this does not handle
     fun embed(mp3: ByteArray, jpeg: ByteArray): ByteArray? {
+        val body = ByteArrayOutputStream().apply {
+            write(0) // latin-1 text encoding
+            write("image/jpeg".toByteArray(Charsets.ISO_8859_1))
+            write(0)
+            write(3) // front cover
+            write(0) // empty description
+            write(jpeg)
+        }.toByteArray()
+        return rewrite(mp3, "APIC", body)
+    }
+
+    // puts the words of the song in the standard lyrics frame (USLT), which most music apps show
+    fun embedLyrics(mp3: ByteArray, lyrics: String): ByteArray? {
+        val bom = byteArrayOf(0xFF.toByte(), 0xFE.toByte())
+        val body = ByteArrayOutputStream().apply {
+            write(1) // utf-16 with a byte order mark, works in both ID3 v2.3 and v2.4
+            write("eng".toByteArray(Charsets.ISO_8859_1))
+            write(bom)
+            write(0)
+            write(0) // empty description
+            write(bom)
+            write(lyrics.toByteArray(Charsets.UTF_16LE))
+        }.toByteArray()
+        return rewrite(mp3, "USLT", body)
+    }
+
+    // reads the lyrics frame back, or null when the file has none
+    fun extractLyrics(mp3: ByteArray): String? {
+        val frame = findFrame(mp3, "USLT") ?: return null
+        val (b, start, end) = frame
+        if (end - start < 5) return null
+        val encoding = b[start].toInt()
+        var pos = start + 4 // encoding and language
+        val wide = encoding == 1 || encoding == 2
+        // skip the description, it ends with one zero byte (two for utf-16)
+        if (wide) {
+            while (pos + 1 < end && !(b[pos].toInt() == 0 && b[pos + 1].toInt() == 0)) pos += 2
+            pos += 2
+        } else {
+            while (pos < end && b[pos].toInt() != 0) pos++
+            pos++
+        }
+        if (pos >= end) return null
+        val text = when (encoding) {
+            1 -> String(b, pos, end - pos, Charsets.UTF_16)
+            2 -> String(b, pos, end - pos, Charsets.UTF_16BE)
+            3 -> String(b, pos, end - pos, Charsets.UTF_8)
+            else -> String(b, pos, end - pos, Charsets.ISO_8859_1)
+        }
+        return text.trimEnd('\u0000').trim().takeIf { it.isNotBlank() }
+    }
+
+    // the body of the first frame with this id: the bytes, where the body starts and where it ends
+    private fun findFrame(mp3: ByteArray, wanted: String): Triple<ByteArray, Int, Int>? {
+        if (mp3.size < 10 || mp3[0] != 'I'.code.toByte() || mp3[1] != 'D'.code.toByte() || mp3[2] != '3'.code.toByte()) return null
+        val version = mp3[3].toInt()
+        if (version !in 3..4 || (mp3[5].toInt() and 0xC0) != 0) return null
+        val end = (10 + syncsafe(mp3, 6)).coerceAtMost(mp3.size)
+        var pos = 10
+        while (pos + 10 <= end) {
+            if (mp3[pos].toInt() == 0) break
+            val id = String(mp3, pos, 4, Charsets.ISO_8859_1)
+            val size = if (version == 4) syncsafe(mp3, pos + 4) else int32(mp3, pos + 4)
+            if (size < 0 || pos + 10 + size > end) return null
+            if (id == wanted) return Triple(mp3, pos + 10, pos + 10 + size)
+            pos += 10 + size
+        }
+        return null
+    }
+
+    // writes the tag again with every frame called id replaced by one new frame with this body.
+    // everything else in the tag, and all of the audio after it, is copied as it was
+    private fun rewrite(mp3: ByteArray, id: String, body: ByteArray): ByteArray? {
         val hasTag = mp3.size >= 10 && mp3[0] == 'I'.code.toByte() && mp3[1] == 'D'.code.toByte() && mp3[2] == '3'.code.toByte()
         val version: Int
         val keptFrames = ByteArrayOutputStream()
@@ -141,11 +214,11 @@ object Id3Cover {
             var pos = 10
             while (pos + 10 <= end) {
                 if (mp3[pos].toInt() == 0) break // padding
-                val id = String(mp3, pos, 4, Charsets.ISO_8859_1)
+                val frameId = String(mp3, pos, 4, Charsets.ISO_8859_1)
                 val size = if (version == 4) syncsafe(mp3, pos + 4) else int32(mp3, pos + 4)
                 val frameEnd = pos + 10 + size
                 if (size < 0 || frameEnd > end) return null
-                if (id != "APIC") keptFrames.write(mp3, pos, 10 + size)
+                if (frameId != id) keptFrames.write(mp3, pos, 10 + size)
                 pos = frameEnd
             }
         } else {
@@ -153,25 +226,13 @@ object Id3Cover {
             audioStart = 0
         }
 
-        val body = ByteArrayOutputStream().apply {
-            write("image/jpeg".toByteArray(Charsets.ISO_8859_1))
-            write(0)
-            write(3) // front cover
-            write(0) // empty description
-            write(jpeg)
-        }.toByteArray()
-        val apic = ByteArrayOutputStream().apply {
-            write(0) // latin-1 text encoding
-            write(body)
-        }.toByteArray()
-
         val frames = ByteArrayOutputStream().apply {
             write(keptFrames.toByteArray())
-            write("APIC".toByteArray(Charsets.ISO_8859_1))
-            write(if (version == 4) syncsafeBytes(apic.size) else int32Bytes(apic.size))
+            write(id.toByteArray(Charsets.ISO_8859_1))
+            write(if (version == 4) syncsafeBytes(body.size) else int32Bytes(body.size))
             write(0)
             write(0)
-            write(apic)
+            write(body)
         }.toByteArray()
 
         return ByteArrayOutputStream(frames.size + PADDING + mp3.size - audioStart + 10).apply {

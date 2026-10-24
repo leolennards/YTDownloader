@@ -292,7 +292,7 @@ fun SettingsScreen(
             }
         }
 
-        SettingsGroup("Album art", 3) {
+        SettingsGroup("Album art and lyrics", 3) {
             SwitchRow(
                 "Official album covers",
                 "Gets the real cover in high resolution from Apple Music or Deezer, instead of a blurry " +
@@ -300,12 +300,19 @@ fun SettingsScreen(
                     "no sure match, the video thumbnail is used.",
                 settings.officialCovers,
             ) { onChange(settings.copy(officialCovers = it)) }
-            AnimatedVisibility(visible = settings.officialCovers, enter = ytEnter(), exit = ytExit()) {
+            GroupDivider()
+            SwitchRow(
+                "Lyrics",
+                "Finds the words of your songs on LRCLIB, a free lyrics library. The player shows them in time " +
+                    "with the music, and they are saved inside the MP3 so other music apps show them too.",
+                settings.lyrics,
+            ) { onChange(settings.copy(lyrics = it)) }
+            AnimatedVisibility(visible = settings.officialCovers || settings.lyrics, enter = ytEnter(), exit = ytExit()) {
                 Column {
                     GroupDivider()
                     SettingBlock(
-                        "Sharpen covers you already have",
-                        "Finds the official cover for the songs already in your library and swaps it in. The music itself is not changed.",
+                        "Upgrade the songs you already have",
+                        "Adds the official cover and the lyrics to the songs already in your library. The music itself is not changed.",
                     ) {
                         val running = coverUpgrade != null && !coverUpgrade.finished
                         if (coverUpgrade != null) {
@@ -313,16 +320,18 @@ fun SettingsScreen(
                             Text(
                                 when {
                                     !coverUpgrade.finished -> "Checking ${coverUpgrade.done} of ${coverUpgrade.total} songs"
-                                    coverUpgrade.improved == 0 -> "No better covers found this time"
-                                    coverUpgrade.improved == 1 -> "1 cover sharpened"
-                                    else -> "${coverUpgrade.improved} covers sharpened"
+                                    coverUpgrade.improved == 0 && coverUpgrade.lyrics == 0 -> "Nothing new found this time"
+                                    else -> listOfNotNull(
+                                        coverUpgrade.improved.takeIf { it > 0 }?.let { if (it == 1) "1 cover sharpened" else "$it covers sharpened" },
+                                        coverUpgrade.lyrics.takeIf { it > 0 }?.let { if (it == 1) "lyrics for 1 song" else "lyrics for $it songs" },
+                                    ).joinToString(", ").replaceFirstChar { it.uppercase() }
                                 },
                                 style = MaterialTheme.typography.bodySmall,
-                                color = if (coverUpgrade.finished && coverUpgrade.improved > 0) YtTheme.colors.success else YtTheme.colors.accentText,
+                                color = if (coverUpgrade.finished && (coverUpgrade.improved > 0 || coverUpgrade.lyrics > 0)) YtTheme.colors.success else YtTheme.colors.accentText,
                             )
                         }
                         SecondaryButton(
-                            text = if (running) "Working on it..." else "Sharpen my covers",
+                            text = if (running) "Working on it..." else "Upgrade my songs",
                             onClick = onUpgradeCovers,
                             enabled = !running,
                             contentColor = YtTheme.colors.accentText,

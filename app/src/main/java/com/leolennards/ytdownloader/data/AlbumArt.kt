@@ -27,13 +27,17 @@ object AlbumArt {
         val cleanTitle = normalizeTitle(title)
         val names = artists.map { normalizeArtist(it) }.filter { it.isNotBlank() }.distinct()
         if (cleanTitle.isBlank() || names.isEmpty()) return null
-        val query = "${names.first()} $cleanTitle"
+        // artist and title first. channel names like "RickAstleyVEVO" lose the space between names,
+        // so then search by title only and let the strict artist check pick the right one
+        val queries = listOf("${names.first()} $cleanTitle", cleanTitle)
         val sources = listOf(::itunes, ::deezer)
-        for (source in sources) {
-            val candidates = runCatching { source(query) }.onFailure { Log.w(TAG, "search failed", it) }.getOrNull() ?: continue
-            val best = pickBest(candidates, title, artists) ?: continue
-            val bitmap = runCatching { download(best.artUrl) }.getOrNull()
-            if (bitmap != null) return bitmap
+        for (query in queries) {
+            for (source in sources) {
+                val candidates = runCatching { source(query) }.onFailure { Log.w(TAG, "search failed", it) }.getOrNull() ?: continue
+                val best = pickBest(candidates, title, artists) ?: continue
+                val bitmap = runCatching { download(best.artUrl) }.getOrNull()
+                if (bitmap != null) return bitmap
+            }
         }
         return null
     }
@@ -121,7 +125,7 @@ object AlbumArt {
     // ---- the two searches ----
 
     private fun itunes(query: String): List<Candidate> {
-        val json = get("https://itunes.apple.com/search?entity=song&limit=15&term=" + URLEncoder.encode(query, "UTF-8"))
+        val json = get("https://itunes.apple.com/search?entity=song&limit=25&term=" + URLEncoder.encode(query, "UTF-8"))
         val results = JSONObject(json).optJSONArray("results") ?: return emptyList()
         return (0 until results.length()).mapNotNull { i ->
             val r = results.getJSONObject(i)
@@ -131,7 +135,7 @@ object AlbumArt {
     }
 
     private fun deezer(query: String): List<Candidate> {
-        val json = get("https://api.deezer.com/search?limit=15&q=" + URLEncoder.encode(query, "UTF-8"))
+        val json = get("https://api.deezer.com/search?limit=25&q=" + URLEncoder.encode(query, "UTF-8"))
         val data = JSONObject(json).optJSONArray("data") ?: return emptyList()
         return (0 until data.length()).mapNotNull { i ->
             val r = data.getJSONObject(i)

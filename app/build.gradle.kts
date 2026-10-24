@@ -39,6 +39,10 @@ android {
     buildFeatures {
         compose = true
     }
+    testOptions {
+        // android's Log and similar calls do nothing in unit tests instead of failing them
+        unitTests.isReturnDefaultValues = true
+    }
     packaging {
         // youtubedl-android needs this so the native files get extracted and can run
         jniLibs {
@@ -59,6 +63,8 @@ dependencies {
     implementation(libs.youtubedl.library)
     implementation(libs.youtubedl.ffmpeg)
     testImplementation(libs.junit)
+    // the real org.json for unit tests (android only ships empty stand-ins there)
+    testImplementation(libs.json.org)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)

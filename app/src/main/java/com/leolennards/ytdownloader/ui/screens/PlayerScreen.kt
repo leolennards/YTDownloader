@@ -8,6 +8,26 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import android.widget.VideoView
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.sp
+import com.leolennards.ytdownloader.data.Lyrics
+import com.leolennards.ytdownloader.data.LyricsFinder
+import com.leolennards.ytdownloader.data.LyricsLoader
+import com.leolennards.ytdownloader.ui.components.IconTile
+import com.leolennards.ytdownloader.ui.components.SkeletonLine
+import com.leolennards.ytdownloader.ui.theme.OnAccent
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -107,6 +127,11 @@ fun MusicPlayerScreen(
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     modifier: Modifier = Modifier,
+    // lyrics shown instead of the cover
+    lyricsOpen: Boolean = false,
+    onToggleLyrics: () -> Unit = {},
+    // look lyrics up online when the song has none yet
+    lyricsOnline: Boolean = true,
 ) {
     val item = state.current ?: run {
         LaunchedEffect(Unit) { onBack() }
@@ -120,10 +145,33 @@ fun MusicPlayerScreen(
     }
     val glow = rememberGlow(art?.let { remember(it) { it.ambientColor() } })
     val motion = LocalMotionEnabled.current
+    // the words of the song: loading, then found or not. only looked up once the lyrics are opened
+    val lyrics by produceState<LyricsState>(LyricsState.Loading, uri, lyricsOpen) {
+        if (!lyricsOpen && value is LyricsState.Loading) return@produceState
+        if (value !is LyricsState.Loading) return@produceState
+        val found = withContext(Dispatchers.IO) {
+            LyricsLoader.load(context, uri, item.title, item.artist, state.durationMs.toLong(), lyricsOnline)
+        }
+        value = LyricsState.Done(found)
+    }
 
     PlayerFrame(
         glow = glow,
         backdrop = art,
+        trailing = {
+            val tint by animateColorAsState(
+                if (lyricsOpen) OnAccent else MaterialTheme.colorScheme.onSurface,
+                motionTween(),
+                label = "lyricsButton",
+            )
+            RoundIconButton(
+                R.drawable.ic_lyrics,
+                if (lyricsOpen) "Hide lyrics" else "Show lyrics",
+                onClick = onToggleLyrics,
+                tint = tint,
+                background = if (lyricsOpen) MaterialTheme.colorScheme.primary else YtTheme.colors.surfaceHigh.copy(alpha = 0.7f),
+            )
+        },
         eyebrow = if (state.queue.size > 1) "Playing ${state.index + 1} of ${state.queue.size}" else "Now playing",
         item = item,
         controls = Controls(
@@ -140,6 +188,14 @@ fun MusicPlayerScreen(
         onBack = onBack,
         modifier = modifier,
     ) {
+        AnimatedContent(
+            targetState = lyricsOpen,
+            transitionSpec = { fadeIn(ytTween(motion, Motion.Standard)) togetherWith fadeOut(ytTween(motion, Motion.Micro)) },
+            label = "coverOrLyrics",
+        ) { showLyrics ->
+        if (showLyrics) {
+            LyricsView(lyrics, state.positionMs.toLong(), onSeek = { onSeek(it.toInt()) })
+        } else {
         // the cover breathes a little: full size while playing, a bit smaller when paused
         val scale by animateFloatAsState(if (state.playing) 1f else 0.88f, motionSpring(dampingRatio = 0.7f), label = "artScale")
         // the biggest square that fits, so it never spills past the screen edges
@@ -168,6 +224,113 @@ fun MusicPlayerScreen(
         }
     }
         }
+        }
+    }
+}
+
+private sealed interface LyricsState {
+    data object Loading : LyricsState
+    data class Done(val lyrics: Lyrics?) : LyricsState
+}
+
+// the words of the song. synced lyrics follow the music: the line being sung is bright, the
+// rest are dimmed, and the list scrolls to keep it in view. tap a line to jump to it
+@Composable
+private fun LyricsView(state: LyricsState, positionMs: Long, onSeek: (Long) -> Unit) {
+    val motion = LocalMotionEnabled.current
+    val fade = Modifier
+        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+        .drawWithContent {
+            drawContent()
+            // soft edges at the top and bottom so lines fade in and out instead of being cut
+            drawRect(
+                Brush.verticalGradient(0f to Color.Transparent, 0.12f to Color.Black, 0.85f to Color.Black, 1f to Color.Transparent),
+                blendMode = BlendMode.DstIn,
+            )
+        }
+    when (state) {
+        LyricsState.Loading -> Column(
+            Modifier.fillMaxSize().padding(top = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
+            listOf(260, 200, 280, 170, 240).forEach { SkeletonLine(it.dp, 26.dp) }
+        }
+
+        is LyricsState.Done -> {
+            val lyrics = state.lyrics
+            val lines = lyrics?.synced
+            when {
+                lyrics == null -> Column(
+                    Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    IconTile(R.drawable.ic_lyrics, size = 56.dp)
+                    Spacer(Modifier.height(14.dp))
+                    Text("No lyrics found", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onBackground)
+                    Text(
+                        "This song is not in the lyrics library yet, or it is instrumental.",
+                        style = MaterialTheme.typography.bodyMedium.copy(textAlign = TextAlign.Center),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp, start = 24.dp, end = 24.dp),
+                    )
+                }
+
+                lines.isNullOrEmpty() -> Text(
+                    lyrics.plain,
+                    style = MaterialTheme.typography.titleLarge.copy(lineHeight = 34.sp),
+                    color = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(fade)
+                        .verticalScroll(rememberScrollState())
+                        .padding(vertical = 40.dp),
+                )
+
+                else -> {
+                    val current = LyricsFinder.currentLine(lines, positionMs + 250)
+                    val list = rememberLazyListState()
+                    BoxWithConstraints(Modifier.fillMaxSize()) {
+                        val offset = with(LocalDensity.current) { (maxHeight * 0.3f).roundToPx() }
+                        // keep the line being sung about a third of the way down
+                        LaunchedEffect(current) {
+                            val target = current.coerceAtLeast(0)
+                            if (motion) list.animateScrollToItem(target, -offset) else list.scrollToItem(target, -offset)
+                        }
+                        LazyColumn(
+                            state = list,
+                            modifier = Modifier.fillMaxSize().then(fade),
+                            contentPadding = PaddingValues(top = maxHeight * 0.3f, bottom = maxHeight * 0.6f),
+                            verticalArrangement = Arrangement.spacedBy(14.dp),
+                        ) {
+                            itemsIndexed(lines) { index, line ->
+                                val alpha by animateFloatAsState(
+                                    when {
+                                        index == current -> 1f
+                                        index < current -> 0.32f
+                                        else -> 0.45f
+                                    },
+                                    motionTween(Motion.Standard),
+                                    label = "lyricAlpha",
+                                )
+                                Text(
+                                    line.text.ifEmpty { "♪" },
+                                    style = MaterialTheme.typography.headlineSmall.copy(lineHeight = 32.sp),
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .graphicsLayer { this.alpha = alpha }
+                                        .clip(MaterialTheme.shapes.small)
+                                        .ytClickable(haptic = true, pressedScale = 0.98f) { onSeek(line.timeMs) }
+                                        .padding(vertical = 4.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 // full screen video player, walks through the videos it was opened from
@@ -229,6 +392,8 @@ private fun PlayerFrame(
     modifier: Modifier = Modifier,
     // the cover, shown huge and blurred behind everything (android 12 and newer)
     backdrop: ImageBitmap? = null,
+    // a button at the top right, like the lyrics button
+    trailing: (@Composable () -> Unit)? = null,
     media: @Composable () -> Unit,
 ) {
     val haptics = rememberHaptics()
@@ -298,7 +463,7 @@ private fun PlayerFrame(
                     background = YtTheme.colors.surfaceHigh.copy(alpha = 0.7f),
                 )
                 Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { EyebrowLabel(eyebrow) }
-                Box(Modifier.size(YtDimens.MinTouch))
+                if (trailing != null) trailing() else Box(Modifier.size(YtDimens.MinTouch))
             }
 
             Box(

@@ -49,7 +49,7 @@ data class VideoMeta(
 )
 
 // progress of upgrading the covers of songs already in the library
-data class CoverUpgrade(val done: Int, val total: Int, val improved: Int, val finished: Boolean = false)
+data class CoverUpgrade(val done: Int, val total: Int, val improved: Int, val finished: Boolean = false, val lyrics: Int = 0)
 
 sealed interface InitState {
     data object Initializing : InitState

@@ -127,6 +127,8 @@ fun YtApp(
     var videoList by remember { mutableStateOf<List<DownloadItem>>(emptyList()) }
     var videoIndex by rememberSaveable { mutableIntStateOf(0) }
     var playerIsVideo by rememberSaveable { mutableStateOf(false) }
+    // the player shows lyrics instead of the cover, kept while you move around the app
+    var lyricsOpen by rememberSaveable { mutableStateOf(false) }
     // files waiting a moment before they are really deleted, so undo is possible
     var pendingDeletes by remember { mutableStateOf<Set<String>>(emptySet()) }
     // where to go back to from the player
@@ -469,6 +471,9 @@ fun YtApp(
                             onSeek = { Playback.seekTo(it) },
                             onPrevious = { Playback.previous() },
                             onNext = { Playback.next() },
+                            lyricsOpen = lyricsOpen,
+                            onToggleLyrics = { lyricsOpen = !lyricsOpen },
+                            lyricsOnline = settings.lyrics,
                         )
                     }
 

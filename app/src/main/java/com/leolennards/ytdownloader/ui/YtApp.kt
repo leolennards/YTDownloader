@@ -141,6 +141,10 @@ fun YtApp(
     val updatingEngine by DownloadController.updating.collectAsState()
     val updateMessage by DownloadController.updateMessage.collectAsState()
     val playback by Playback.state.collectAsState()
+    val coverUpgrade by DownloadController.coverUpgrade.collectAsState()
+    val coverRevision by DownloadController.coverRevision.collectAsState()
+    // covers in saved files changed, so drop the old pictures from memory
+    LaunchedEffect(coverRevision) { if (coverRevision > 0) ArtworkCache.clearAll() }
     val items = history.map { it.toItem() }.filter { it.uri == null || it.uri !in pendingDeletes }
 
     val active = queue.filter { it.isActive }
@@ -478,6 +482,8 @@ fun YtApp(
                         hasCookies = hasCookies,
                         onPickCookies = onPickCookies,
                         onClearCookies = onClearCookies,
+                        coverUpgrade = coverUpgrade,
+                        onUpgradeCovers = { DownloadController.upgradeCovers() },
                     )
                 }
               }

@@ -19,7 +19,9 @@ object CoverArt {
     private const val JPEG_QUALITY = 95
 
     // returns jpeg bytes, or null if there was no usable picture
-    fun build(localThumbnail: File?, youtubeId: String?, fallbackUrl: String?): ByteArray? {
+    fun build(localThumbnail: File?, youtubeId: String?, fallbackUrl: String?, official: Bitmap? = null): ByteArray? {
+        // the real album cover beats any thumbnail
+        if (official != null) encode(official)?.let { return it }
         var best = localThumbnail?.let { runCatching { BitmapFactory.decodeFile(it.absolutePath) }.getOrNull() }
         // the thumbnail yt-dlp picked is usually the biggest, but try youtube's full size one when its small
         if (youtubeId != null && (best == null || min(best.width, best.height) < 720)) {
@@ -27,16 +29,18 @@ object CoverArt {
             if (maxRes != null && (best == null || maxRes.width * maxRes.height > best.width * best.height)) best = maxRes
         }
         if (best == null && fallbackUrl != null) best = download(fallbackUrl)
-        val source = best ?: return null
-        return try {
-            val square = squareCover(source)
-            ByteArrayOutputStream().use { out ->
-                square.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
-                out.toByteArray()
-            }
-        } catch (e: Exception) {
-            null
+        return encode(best ?: return null)
+    }
+
+    // square, at most 1200 px, as a high quality jpeg
+    fun encode(source: Bitmap): ByteArray? = try {
+        val square = squareCover(source)
+        ByteArrayOutputStream().use { out ->
+            square.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
+            out.toByteArray()
         }
+    } catch (e: Exception) {
+        null
     }
 
     fun squareCover(source: Bitmap): Bitmap {

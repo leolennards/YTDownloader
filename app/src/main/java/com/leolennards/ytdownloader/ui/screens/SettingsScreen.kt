@@ -39,7 +39,9 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.leolennards.ytdownloader.data.CoverUpgrade
 import com.leolennards.ytdownloader.data.SettingsState
+import com.leolennards.ytdownloader.ui.components.YtProgressBar
 import com.leolennards.ytdownloader.ui.components.ChoicePill
 import com.leolennards.ytdownloader.ui.components.EyebrowLabel
 import com.leolennards.ytdownloader.ui.components.ScreenHeader
@@ -214,6 +216,8 @@ fun SettingsScreen(
     hasCookies: Boolean = false,
     onPickCookies: () -> Unit = {},
     onClearCookies: () -> Unit = {},
+    coverUpgrade: CoverUpgrade? = null,
+    onUpgradeCovers: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     // the folder name is kept here while typing, so the cursor does not jump
@@ -288,7 +292,48 @@ fun SettingsScreen(
             }
         }
 
-        SettingsGroup("Saving", 3) {
+        SettingsGroup("Album art", 3) {
+            SwitchRow(
+                "Official album covers",
+                "Gets the real cover in high resolution from Apple Music or Deezer, instead of a blurry " +
+                    "video thumbnail. Only the song and artist name are sent to look it up. When there is " +
+                    "no sure match, the video thumbnail is used.",
+                settings.officialCovers,
+            ) { onChange(settings.copy(officialCovers = it)) }
+            AnimatedVisibility(visible = settings.officialCovers, enter = ytEnter(), exit = ytExit()) {
+                Column {
+                    GroupDivider()
+                    SettingBlock(
+                        "Sharpen covers you already have",
+                        "Finds the official cover for the songs already in your library and swaps it in. The music itself is not changed.",
+                    ) {
+                        val running = coverUpgrade != null && !coverUpgrade.finished
+                        if (coverUpgrade != null) {
+                            YtProgressBar(coverUpgrade.done.toFloat() / coverUpgrade.total.coerceAtLeast(1), height = 4.dp)
+                            Text(
+                                when {
+                                    !coverUpgrade.finished -> "Checking ${coverUpgrade.done} of ${coverUpgrade.total} songs"
+                                    coverUpgrade.improved == 0 -> "No better covers found this time"
+                                    coverUpgrade.improved == 1 -> "1 cover sharpened"
+                                    else -> "${coverUpgrade.improved} covers sharpened"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (coverUpgrade.finished && coverUpgrade.improved > 0) YtTheme.colors.success else YtTheme.colors.accentText,
+                            )
+                        }
+                        SecondaryButton(
+                            text = if (running) "Working on it..." else "Sharpen my covers",
+                            onClick = onUpgradeCovers,
+                            enabled = !running,
+                            contentColor = YtTheme.colors.accentText,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+            }
+        }
+
+        SettingsGroup("Saving", 4) {
             SettingBlock(
                 "Folder name",
                 "Music goes in Music / $folderShown and videos in Movies / $folderShown. Files you already saved stay where they are.",

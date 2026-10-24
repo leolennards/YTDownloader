@@ -88,8 +88,11 @@ fun PreviewScreen(
     val thumbnail = ready?.meta?.thumbnail
     val wide: ImageBitmap? = remember(thumbnail) { thumbnail?.asImageBitmap() }
     // the same square the mp3 will get, so what you see here is what ends up in your music app
-    val square by produceState<ImageBitmap?>(null, thumbnail) {
-        value = thumbnail?.let { bmp ->
+    // the official album cover when one was found, otherwise the thumbnail made square
+    val official = ready?.meta?.officialCover
+    val square by produceState<ImageBitmap?>(null, thumbnail, official) {
+        val source = official ?: thumbnail
+        value = source?.let { bmp ->
             withContext(Dispatchers.Default) { runCatching { CoverArt.squareCover(bmp).asImageBitmap() }.getOrNull() }
         }
     }
@@ -164,6 +167,20 @@ fun PreviewScreen(
                                 trackColor = YtTheme.colors.track,
                                 strokeWidth = 3.dp,
                             )
+                        }
+                        if (!video && official != null) {
+                            Row(
+                                modifier = Modifier
+                                    .align(Alignment.TopStart)
+                                    .padding(12.dp)
+                                    .background(Color.Black.copy(alpha = 0.72f), PillShape)
+                                    .padding(horizontal = 10.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                YtIcon(R.drawable.ic_check, tint = Color.White, size = 13.dp)
+                                Text("Official album art", style = MaterialTheme.typography.labelMedium, color = Color.White)
+                            }
                         }
                         if (ready != null && ready.meta.durationSeconds > 0) {
                             Text(
@@ -268,7 +285,7 @@ fun PreviewScreen(
                             buildString {
                                 append("Saves to ")
                                 append(if (isVideo) "Movies / $saveFolder" else "Music / $saveFolder")
-                                if (!isVideo) append(" with cover art")
+                                if (!isVideo) append(if (official != null) " with the official album art" else " with cover art")
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,

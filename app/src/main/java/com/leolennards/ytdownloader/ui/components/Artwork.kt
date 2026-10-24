@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,6 +55,16 @@ object ArtworkCache {
 
     // what reading a file found: a picture, nothing for sure, or an error worth retrying
     private class Found(val bitmap: Bitmap?, val sure: Boolean)
+
+    // goes up when covers in saved files changed, so pictures on screen load again
+    var revision by mutableIntStateOf(0)
+        private set
+
+    fun clearAll() {
+        cache.evictAll()
+        missing.clear()
+        revision++
+    }
 
     fun peek(uri: String, sizePx: Int): ImageBitmap? = cache.get("$uri@$sizePx")
 
@@ -160,7 +172,7 @@ fun Artwork(
 ) {
     val context = LocalContext.current
     val px = with(LocalDensity.current) { loadSize.roundToPx() }
-    val image by produceState(uri?.let { ArtworkCache.peek(it, px) }, uri, px) {
+    val image by produceState(uri?.let { ArtworkCache.peek(it, px) }, uri, px, ArtworkCache.revision) {
         if (uri != null && value == null) value = ArtworkCache.load(context, uri, format, px)
     }
     ArtworkFrame(image, format, modifier, shape, iconSize)

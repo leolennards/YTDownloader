@@ -39,12 +39,17 @@ fun HistoryEntry.toItem() = DownloadItem(
     sizeBytes = sizeBytes,
 )
 
-class VideoMeta(
+data class VideoMeta(
     val title: String,
     val uploader: String,
     val durationSeconds: Long,
     val thumbnail: Bitmap?,
+    // the official album cover, when one was found (loads a moment after the rest)
+    val officialCover: Bitmap? = null,
 )
+
+// progress of upgrading the covers of songs already in the library
+data class CoverUpgrade(val done: Int, val total: Int, val improved: Int, val finished: Boolean = false)
 
 sealed interface InitState {
     data object Initializing : InitState

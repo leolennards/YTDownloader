@@ -20,7 +20,8 @@ An Android app that saves videos and music from YouTube, TikTok, Instagram, Twit
 - Paste several links at once and they all go into a queue
 - Paste a playlist or an album link and every track is added to the queue
 - Several downloads run at the same time (you choose 1 to 3 in Settings)
-- MP3 files get tags and a clean square cover. The app takes the sharpest thumbnail it can find, cuts off any black bars baked into it and crops it to a square that fills the whole cover (up to 1200 x 1200)
+- MP3 files get tags and the official album cover in high resolution (up to 1200 x 1200), looked up on Apple Music and then Deezer with strict matching so a wrong cover is never used. When there is no sure match, the app takes the sharpest YouTube thumbnail, cuts off any black bars and crops it to a clean square
+- A Settings button sharpens the covers of songs you already downloaded, without touching the music
 - Albums get their own folder with track numbers
 - A notification shows the progress while the app is closed
 - Share a link from another app to AnyGrab, and it can start downloading straight away (turn this on in Settings, and choose MP3 or MP4)
@@ -55,7 +56,7 @@ No navigation library and no database, to keep the dependencies small. The scree
 ## How it is organised
 
 - `data/DownloadController.kt` is the main part. It keeps the queue, runs the downloads and reads playlists
-- `data/CoverArt.kt` makes the square cover and writes it into the MP3's ID3 tag
+- `data/AlbumArt.kt` finds the official album cover, `data/CoverArt.kt` makes the square cover and writes it into the MP3's ID3 tag
 - `DownloadService.kt` keeps downloads alive in the background and shows the notification
 - `ui/screens` has the screens: paste a link, preview, downloading, library, player and settings
 - `ui/components` has the shared pieces like buttons, cards, the floating nav bar and the artwork loader

@@ -259,6 +259,15 @@ object DownloadController {
                     thumbnail = loadThumbnail(info.thumbnail),
                 )
                 _fetch.value = FetchState.Ready(url, meta)
+                // look up the official cover so the preview shows what the mp3 will really get
+                if (AppSettings.state.value.officialCovers) {
+                    val artists = artistNames(meta.title, meta.uploader)
+                    val official = runCatching { AlbumArt.find(cleanMusicTitle(meta.title), artists) }.getOrNull()
+                    val now = _fetch.value
+                    if (official != null && now is FetchState.Ready && now.url == url) {
+                        _fetch.value = now.copy(meta = now.meta.copy(officialCover = official))
+                    }
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -629,7 +638,7 @@ object DownloadController {
             if (format == MediaFormat.MP3) {
                 val thumb = files.firstOrNull { it.extension in ThumbnailExts }
                 val videoId = (if (info?.extractorKey == "Youtube") info.id else null) ?: youtubeId(url)
-                addCover(output, thumb, videoId, info?.thumbnail)
+                addCover(output, thumb, videoId, info?.thumbnail, title, artistNames(rawTitle, artist))
             }
             val size = output.length()
             val uri = saveToMediaStore(output, title, format, job.folder)
@@ -657,14 +666,67 @@ object DownloadController {
     private val ThumbnailExts = setOf("jpg", "jpeg", "png", "webp")
 
     // makes a clean square cover and puts it in the mp3. a missing cover is not worth failing the download
-    private fun addCover(mp3: File, thumbnail: File?, videoId: String?, thumbnailUrl: String?) {
+    private fun addCover(mp3: File, thumbnail: File?, videoId: String?, thumbnailUrl: String?, title: String, artists: List<String>) {
         try {
-            val jpeg = CoverArt.build(thumbnail, videoId, thumbnailUrl) ?: return
+            val official = if (AppSettings.state.value.officialCovers) AlbumArt.find(title, artists) else null
+            val jpeg = CoverArt.build(thumbnail, videoId, thumbnailUrl, official) ?: return
             val tagged = Id3Cover.embed(mp3.readBytes(), jpeg) ?: return
             mp3.writeBytes(tagged)
         } catch (e: Exception) {
             Log.w(TAG, "could not add the cover art", e)
         }
+    }
+
+    // who might be the artist: the "Artist - Song" part of a video title, then the channel name
+    private fun artistNames(rawTitle: String, channel: String?): List<String> {
+        val fromTitle = rawTitle.substringBefore(" - ", "").trim().takeIf { it.isNotBlank() && it.length < 60 }
+        return listOfNotNull(fromTitle, channel).flatMap { name ->
+            // "Drake & 21 Savage" can be filed under either
+            listOf(name) + name.split(Regex("""\s*(,|&|\bx\b|\band\b)\s*""", RegexOption.IGNORE_CASE)).filter { it.isNotBlank() }
+        }.distinct()
+    }
+
+    // ---- better covers for songs already in the library ----
+
+    private val _coverUpgrade = MutableStateFlow<CoverUpgrade?>(null)
+    val coverUpgrade: StateFlow<CoverUpgrade?> = _coverUpgrade.asStateFlow()
+    // goes up whenever covers on saved files changed, so the ui reloads its pictures
+    private val _coverRevision = MutableStateFlow(0)
+    val coverRevision: StateFlow<Int> = _coverRevision.asStateFlow()
+
+    // looks up the official cover for every saved song and puts it in the file. the sound is
+    // never touched, only the tag at the front, and a file is only rewritten when the new
+    // tag was built without problems
+    fun upgradeCovers() {
+        if (_coverUpgrade.value?.finished == false) return
+        val songs = _history.value.filter { it.format == MediaFormat.MP3 }
+        if (songs.isEmpty()) return
+        _coverUpgrade.value = CoverUpgrade(0, songs.size, 0)
+        scope.launch {
+            var improved = 0
+            songs.forEachIndexed { index, song ->
+                try {
+                    val artists = artistNames(song.title, song.artist)
+                    val cover = AlbumArt.find(song.title, artists)?.let { CoverArt.encode(it) }
+                    if (cover != null && rewriteCover(Uri.parse(song.uri), cover)) improved++
+                } catch (e: Exception) {
+                    Log.w(TAG, "cover upgrade failed for ${song.title}", e)
+                }
+                _coverUpgrade.value = CoverUpgrade(index + 1, songs.size, improved)
+            }
+            _coverUpgrade.value = CoverUpgrade(songs.size, songs.size, improved, finished = true)
+            if (improved > 0) _coverRevision.update { it + 1 }
+        }
+    }
+
+    private fun rewriteCover(uri: Uri, jpeg: ByteArray): Boolean {
+        val resolver = app.contentResolver
+        val original = resolver.openInputStream(uri)?.use { it.readBytes() } ?: return false
+        val tagged = Id3Cover.embed(original, jpeg) ?: return false
+        // the new file must still end with exactly the same sound as before
+        if (tagged.size <= jpeg.size || original.size < 1024) return false
+        resolver.openOutputStream(uri, "wt")?.use { it.write(tagged) } ?: return false
+        return true
     }
 
     // reads the details of one video. if youtube refuses, ask again as a different client

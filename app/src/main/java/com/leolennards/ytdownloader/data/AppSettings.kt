@@ -28,6 +28,8 @@ data class SettingsState(
     val themeMode: Int = 0,
     // library shows big covers in a grid instead of a list
     val libraryGrid: Boolean = false,
+    // look up the official album cover (itunes, then deezer) instead of using the youtube thumbnail
+    val officialCovers: Boolean = true,
 )
 
 // keeps the settings in SharedPreferences
@@ -53,6 +55,7 @@ object AppSettings {
             wifiOnly = prefs.getBoolean("wifiOnly", defaults.wifiOnly),
             themeMode = prefs.getInt("themeMode", defaults.themeMode).coerceIn(0, 2),
             libraryGrid = prefs.getBoolean("libraryGrid", defaults.libraryGrid),
+            officialCovers = prefs.getBoolean("officialCovers", defaults.officialCovers),
         )
     }
 
@@ -70,6 +73,7 @@ object AppSettings {
             .putBoolean("wifiOnly", s.wifiOnly)
             .putInt("themeMode", s.themeMode)
             .putBoolean("libraryGrid", s.libraryGrid)
+            .putBoolean("officialCovers", s.officialCovers)
             .apply()
     }
 }

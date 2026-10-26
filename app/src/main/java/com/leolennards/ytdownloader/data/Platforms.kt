@@ -13,6 +13,8 @@ enum class Platform(val label: String, val color: Long, private val hosts: List<
     Reddit("Reddit", 0xFFFF4500, listOf("reddit.com", "redd.it")),
     Vimeo("Vimeo", 0xFF1AB7EA, listOf("vimeo.com")),
     Twitch("Twitch", 0xFF9146FF, listOf("twitch.tv")),
+    // shazam has no audio, the song is found on youtube music instead (see Shazam)
+    Shazam("Shazam", 0xFF0088FF, listOf("shazam.com", "shz.am")),
     ;
 
     fun matches(host: String): Boolean = hosts.any { host == it || host.endsWith(".$it") }

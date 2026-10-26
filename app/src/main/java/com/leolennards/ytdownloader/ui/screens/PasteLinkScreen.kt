@@ -121,6 +121,7 @@ fun PasteLinkScreen(
     // which site the link is from, so it can be named and its chip can light up
     val platform = links.singleOrNull()?.let { Platform.of(it) }
     val hint = when {
+        single && platform == Platform.Shazam -> "Shazam song. It will be found on YouTube Music."
         single && platform != null -> "${platform.label} link, ready to grab"
         single -> "Link found, ready to grab"
         links.size == 1 && playlistCount == 1 -> "Playlist found. Every track in it will be added."

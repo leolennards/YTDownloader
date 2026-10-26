@@ -16,6 +16,8 @@ class PlatformsTest {
         assertEquals(Platform.X, Platform.of("https://twitter.com/user/status/1"))
         assertEquals(Platform.X, Platform.of("https://x.com/user/status/1"))
         assertEquals(Platform.SoundCloud, Platform.of("https://soundcloud.com/artist/track"))
+        assertEquals(Platform.Shazam, Platform.of("https://www.shazam.com/song/1787023936/dtmf"))
+        assertEquals(Platform.Shazam, Platform.of("https://shz.am/t522289236"))
     }
 
     @Test

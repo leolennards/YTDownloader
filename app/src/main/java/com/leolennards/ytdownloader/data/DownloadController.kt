@@ -41,6 +41,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.net.URL
+import java.net.URLEncoder
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
@@ -251,20 +252,25 @@ object DownloadController {
                 return@launch
             }
             try {
-                val info = lookup(url)
+                // a shazam link is swapped for the same song on youtube music
+                val shazam = if (Shazam.isLink(url)) fromShazam(url) else null
+                val target = shazam?.first ?: url
+                val song = shazam?.second
+                val info = lookup(target)
                 val meta = VideoMeta(
-                    title = info.title ?: "Untitled",
-                    uploader = info.uploader ?: "",
+                    title = song?.title ?: info.title ?: "Untitled",
+                    uploader = song?.artist ?: info.uploader ?: "",
                     durationSeconds = (info.duration ?: 0).toLong(),
                     thumbnail = loadThumbnail(info.thumbnail),
+                    songArtist = song?.artist,
                 )
-                _fetch.value = FetchState.Ready(url, meta)
+                _fetch.value = FetchState.Ready(target, meta)
                 // look up the official cover so the preview shows what the mp3 will really get
                 if (AppSettings.state.value.officialCovers) {
                     val artists = artistNames(meta.title, meta.uploader)
                     val official = runCatching { AlbumArt.find(cleanMusicTitle(meta.title), artists) }.getOrNull()
                     val now = _fetch.value
-                    if (official != null && now is FetchState.Ready && now.url == url) {
+                    if (official != null && now is FetchState.Ready && now.url == target) {
                         _fetch.value = now.copy(meta = now.meta.copy(officialCover = official))
                     }
                 }
@@ -281,8 +287,8 @@ object DownloadController {
 
     // adds a download to the queue and returns its id right away, the download runs in the background.
     // if the title isnt known yet the job looks it up first
-    fun enqueue(url: String, format: MediaFormat, height: Int, knownTitle: String? = null): String =
-        enqueueMany(listOf(url to knownTitle), format, height).first()
+    fun enqueue(url: String, format: MediaFormat, height: Int, knownTitle: String? = null, knownArtist: String? = null): String =
+        enqueueMany(listOf(url to knownTitle), format, height, artist = knownArtist).first()
 
     // adds lots of downloads at once (link + title if known). starts the service once
     fun enqueueMany(
@@ -292,6 +298,7 @@ object DownloadController {
         folder: String? = null,
         album: String? = null,
         firstTrack: Int? = null,
+        artist: String? = null,
     ): List<String> {
         if (entries.isEmpty()) return emptyList()
         val startsNewBatch = _queue.value.none { it.isActive }
@@ -310,6 +317,7 @@ object DownloadController {
                 folder = folder,
                 album = album,
                 track = firstTrack?.plus(index),
+                artist = artist,
             )
         }
         _queue.update { list ->
@@ -410,7 +418,7 @@ object DownloadController {
         val job = _queue.value.firstOrNull { it.id == id } ?: return
         dismiss(id)
         val title = job.title.takeIf { it != job.url }
-        enqueueMany(listOf(job.url to title), job.format, job.height, job.folder, job.album, job.track)
+        enqueueMany(listOf(job.url to title), job.format, job.height, job.folder, job.album, job.track, job.artist)
     }
 
     // removes a finished or failed job from the list
@@ -457,7 +465,9 @@ object DownloadController {
 
     private suspend fun runJob(job: QueueJob, knownTitle: String?) {
         val id = job.id
-        val url = job.url
+        var url = job.url
+        var knownTitle = knownTitle
+        var songArtist = job.artist
         val format = job.format
         val height = job.height
         val dir = File(app.cacheDir, "downloads").apply { mkdirs() }
@@ -466,6 +476,14 @@ object DownloadController {
             val engine = _init.first { it !is InitState.Initializing }
             if (engine is InitState.Failed) error(engine.message)
 
+            // a shazam link has no audio, so find the same song on youtube music first
+            if (Shazam.isLink(url)) {
+                val (found, song) = fromShazam(url)
+                url = found
+                knownTitle = song.title
+                songArtist = song.artist
+            }
+
             // for album tracks the title is known already, so the lookup is only for the artist and can fail quietly
             val info = if (knownTitle != null) {
                 runCatching { lookup(url) }.getOrNull()
@@ -473,7 +491,7 @@ object DownloadController {
                 lookup(url)
             }
             val rawTitle = knownTitle ?: (info?.title ?: "Untitled")
-            val artist = job.artist ?: info?.uploader?.removeSuffix(" - Topic")?.trim()
+            val artist = songArtist ?: info?.uploader?.removeSuffix(" - Topic")?.trim()
                 ?.takeIf { it.isNotBlank() && it != "NA" }
             // for music, drop the "Artist - " at the start and stuff like (Audio), the artist is already in the tags
             val title = if (format == MediaFormat.MP3) cleanMusicTitle(rawTitle) else rawTitle
@@ -525,6 +543,13 @@ object DownloadController {
                     if (safeTitle.isNotBlank()) {
                         request.addOption("--parse-metadata", "%(album|$safeTitle - Single)s:%(meta_album)s")
                     }
+                }
+                // a song from shazam: shazam's own title and artist go in the tags
+                songArtist?.let { name ->
+                    val safeArtist = name.replace("&", ",").replace(Regex("[%()|:\\\\]"), " ").replace(Regex("\\s+"), " ").trim()
+                    val safeTitle = title.replace("&", "and").replace(Regex("[%()|:\\\\]"), " ").replace(Regex("\\s+"), " ").trim()
+                    if (safeArtist.isNotBlank()) request.addOption("--parse-metadata", "%(id&$safeArtist|$safeArtist)s:%(meta_artist)s")
+                    if (safeTitle.isNotBlank()) request.addOption("--parse-metadata", "%(id&$safeTitle|$safeTitle)s:%(meta_title)s")
                 }
             } else {
                 request.addOption(
@@ -785,6 +810,28 @@ object DownloadController {
             }
             throw e
         }
+    }
+
+    // finds the song from a shazam link on youtube music, so it can be downloaded from there.
+    // the songs tab of youtube music has the studio version without a video intro, normal
+    // youtube search is the backup
+    private fun fromShazam(url: String): Pair<String, Shazam.Song> {
+        val song = Shazam.song(url)
+        val searches = listOf(
+            "https://music.youtube.com/search?q=" + URLEncoder.encode("${song.artist} ${song.title}", "UTF-8") + "#songs",
+            "ytsearch8:${song.artist} - ${song.title}",
+        )
+        for (search in searches) {
+            val hits = runCatching {
+                val request = YoutubeDLRequest(search)
+                request.addOption("--flat-playlist")
+                request.addOption("--playlist-end", "8")
+                request.addOption("--print", "%(url)s\t%(title)s\t%(duration)s\t%(channel,uploader)s")
+                Shazam.parseHits(YoutubeDL.getInstance().execute(request).out)
+            }.onFailure { Log.w(TAG, "search failed: $search", it) }.getOrNull() ?: continue
+            Shazam.pickBest(hits, song)?.let { return it.url to song }
+        }
+        error("Could not find \"${song.title}\" by ${song.artist} on YouTube")
     }
 
     private fun singleVideo(url: String) = withCookies(YoutubeDLRequest(url), url).apply { addOption("--no-playlist") }

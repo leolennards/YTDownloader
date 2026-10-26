@@ -416,6 +416,7 @@ fun YtApp(
                                         format,
                                         QualityHeights[qualityIndex],
                                         knownTitle = ready.meta.title,
+                                        knownArtist = ready.meta.songArtist,
                                     )
                                     url = ""
                                     haptics.confirm()

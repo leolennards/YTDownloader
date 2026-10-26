@@ -46,6 +46,8 @@ data class VideoMeta(
     val thumbnail: Bitmap?,
     // the official album cover, when one was found (loads a moment after the rest)
     val officialCover: Bitmap? = null,
+    // the artist when the link was from shazam, so the tags use shazam's name for them
+    val songArtist: String? = null,
 )
 
 // progress of upgrading the covers of songs already in the library

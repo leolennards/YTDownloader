@@ -155,4 +155,27 @@ class ShazamTest {
         )
         assertNull(Shazam.pickBest(hits, blinding))
     }
+
+    private val giveThanks = Shazam.Song("Give Thanks (feat. Allanzo)", "B3XX", null)
+
+    @Test
+    fun trustsTheTopYoutubeMusicSongsByTitle() {
+        // youtube music often leaves the artist out of its search results
+        val hits = listOf(Shazam.Hit("song", "Give Thanks (feat. Allanzo)", 190, null))
+        assertNull(Shazam.pickBest(hits, giveThanks))
+        assertEquals("song", Shazam.pickBest(hits, giveThanks, trustTitle = true)?.url)
+        // but a cover by a named artist is still refused
+        assertNull(Shazam.pickBest(listOf(Shazam.Hit("cover", "Give Thanks", 190, "Someone Else")), giveThanks, trustTitle = true))
+    }
+
+    @Test
+    fun findsTheLengthInTheStore() {
+        val tracks = listOf(
+            Shazam.Track("Give Thanks (Remix)", "B3XX", 250),
+            Shazam.Track("Give Thanks", "Other Band", 300),
+            Shazam.Track("Give Thanks (feat. Allanzo)", "B3XX", 191),
+        )
+        assertEquals(191, Shazam.lengthOf(tracks, giveThanks))
+        assertNull(Shazam.lengthOf(tracks.take(2), giveThanks))
+    }
 }

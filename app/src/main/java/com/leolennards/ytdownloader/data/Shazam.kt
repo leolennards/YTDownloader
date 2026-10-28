@@ -172,8 +172,10 @@ object Shazam {
 
     // the result that is really this song: the title must match (no remix or live version unless
     // the song is one) and either the artist or the length must match too. a length far off
-    // usually means a music video with an intro, so a result with the right length wins
-    fun pickBest(hits: List<Hit>, song: Song): Hit? {
+    // usually means a music video with an intro, so a result with the right length wins.
+    // trustTitle is for the top songs on youtube music, which are official tracks: there the
+    // title alone is enough, because the artist is often missing from the search results
+    fun pickBest(hits: List<Hit>, song: Song, trustTitle: Boolean = false): Hit? {
         val wanted = AlbumArt.normalizeTitle(song.title)
         val artists = song.artist.split(Regex("""\s*(,|&|\bx\b|\bfeat\.?|\bft\.?)\s*""", RegexOption.IGNORE_CASE))
             .map { AlbumArt.normalizeArtist(it) }.filter { it.isNotBlank() }
@@ -185,17 +187,51 @@ object Shazam {
             val titleWords = " ${AlbumArt.normalizeArtist(rawTitle)} "
             val artistOk = (hit.channel != null && AlbumArt.artistMatches(hit.channel, artists)) ||
                 artists.any { " $it " in titleWords }
+            // a channel that is clearly someone else is a cover, even on youtube music
+            val otherArtist = hit.channel != null && !artistOk
             val gap = if (hit.durationSeconds != null && song.durationSeconds != null) {
                 kotlin.math.abs(hit.durationSeconds - song.durationSeconds)
             } else {
                 null
             }
             val lengthOk = gap != null && gap <= 5
-            if (!artistOk && !lengthOk) return@mapNotNull null
+            if (!artistOk && !lengthOk && !(trustTitle && !otherArtist && (gap == null || gap <= 20))) return@mapNotNull null
             var score = titleScore + (if (artistOk) 1.0 else 0.0) + (if (lengthOk) 1.0 else 0.0)
             if (gap != null && gap > 20) score -= 2.0
             hit to score
         }.maxByOrNull { it.second }?.first
+    }
+
+    // a short list of what a search found, for "Show details" when nothing matched
+    fun describe(hits: List<Hit>): String = hits.take(5).joinToString("\n") { hit ->
+        "- ${hit.title}" + (hit.channel?.let { " · $it" } ?: "") + (hit.durationSeconds?.let { " · ${it}s" } ?: "")
+    }
+
+    // the song's length from apple's itunes search, so the right youtube upload can be told
+    // apart by its length. the shared text has no length in it
+    fun withLength(song: Song): Song {
+        if (song.durationSeconds != null) return song
+        val term = java.net.URLEncoder.encode("${song.artist} ${song.title}", "UTF-8")
+        val results = runCatching { JSONObject(get("https://itunes.apple.com/search?entity=song&limit=15&term=$term")).optJSONArray("results") }
+            .getOrNull() ?: return song
+        val tracks = (0 until results.length()).map { i ->
+            val r = results.getJSONObject(i)
+            Track(r.optString("trackName"), r.optString("artistName"), (r.optLong("trackTimeMillis", 0) / 1000).toInt())
+        }
+        return song.copy(durationSeconds = lengthOf(tracks, song) ?: return song)
+    }
+
+    data class Track(val title: String, val artist: String, val seconds: Int)
+
+    // the length of the store track that is this song, or null when none clearly is
+    fun lengthOf(tracks: List<Track>, song: Song): Int? {
+        val wanted = AlbumArt.normalizeTitle(song.title)
+        val artists = song.artist.split(Regex("""\s*(,|&)\s*""")).map { AlbumArt.normalizeArtist(it) }.filter { it.isNotBlank() }
+        if (wanted.isBlank() || artists.isEmpty()) return null
+        return tracks.firstOrNull {
+            it.seconds > 0 && AlbumArt.artistMatches(it.artist, artists) &&
+                AlbumArt.titleScore(AlbumArt.normalizeTitle(it.title), wanted, song.title) >= 0.8
+        }?.seconds
     }
 
     // the lines printed by yt-dlp for a search (url, title, length, channel split by tabs)

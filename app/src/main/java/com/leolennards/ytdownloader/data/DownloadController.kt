@@ -693,7 +693,7 @@ object DownloadController {
             if (id !in cancelled) {
                 Log.e(TAG, "download failed", e)
                 // keep the full message for "Show details" when the download itself never started
-                update(id) { it.copy(status = JobStatus.Failed, error = friendlyMessage(e), errorDetails = it.errorDetails ?: e.message) }
+                update(id) { it.copy(status = JobStatus.Failed, error = friendlyMessage(e), errorDetails = it.errorDetails ?: (e as? SearchFailedException)?.details ?: e.message) }
             }
         } finally {
             dir.listFiles { f -> f.name.startsWith("$id.") }?.forEach { it.delete() }
@@ -819,23 +819,37 @@ object DownloadController {
     // the songs tab of youtube music has the studio version without a video intro, normal
     // youtube search is the backup
     private fun fromShazam(url: String): Pair<String, Shazam.Song> {
-        val song = Shazam.song(url)
+        val song = Shazam.withLength(Shazam.song(url))
+        // (search, true when its top results are official songs)
         val searches = listOf(
-            "https://music.youtube.com/search?q=" + URLEncoder.encode("${song.artist} ${song.title}", "UTF-8") + "#songs",
-            "ytsearch8:${song.artist} - ${song.title}",
+            "https://music.youtube.com/search?q=" + URLEncoder.encode("${song.artist} ${song.title}", "UTF-8") + "#songs" to true,
+            "ytsearch8:${song.artist} - ${song.title}" to false,
         )
-        for (search in searches) {
+        val seen = mutableListOf<String>()
+        for ((search, official) in searches) {
             val hits = runCatching {
                 val request = YoutubeDLRequest(search)
                 request.addOption("--flat-playlist")
                 request.addOption("--playlist-end", "8")
-                request.addOption("--print", "%(url)s\t%(title)s\t%(duration)s\t%(channel,uploader)s")
+                request.addOption("--print", "%(url)s\t%(title)s\t%(duration)s\t%(artists.0,artist,channel,uploader)s")
                 Shazam.parseHits(YoutubeDL.getInstance().execute(request).out)
-            }.onFailure { Log.w(TAG, "search failed: $search", it) }.getOrNull() ?: continue
+            }.onFailure {
+                Log.w(TAG, "search failed: $search", it)
+                seen += "${if (official) "YouTube Music" else "YouTube"} search failed: ${it.message?.lines()?.lastOrNull { l -> l.isNotBlank() }}"
+            }.getOrNull() ?: continue
+            seen += "${if (official) "YouTube Music" else "YouTube"} found ${hits.size}:\n${Shazam.describe(hits)}"
             Shazam.pickBest(hits, song)?.let { return it.url to song }
+            if (official) Shazam.pickBest(hits.take(3), song, trustTitle = true)?.let { return it.url to song }
         }
-        error("Could not find \"${song.title}\" by ${song.artist} on YouTube")
+        val length = song.durationSeconds?.let { " (${it}s)" }.orEmpty()
+        throw SearchFailedException(
+            "Could not find \"${song.title}\" by ${song.artist} on YouTube",
+            "Looked for \"${song.title}\" by ${song.artist}$length\n" + seen.joinToString("\n"),
+        )
     }
+
+    // no search result was the song. details lists what was found, for "Show details"
+    private class SearchFailedException(message: String, val details: String) : Exception(message)
 
     private fun singleVideo(url: String) = withCookies(YoutubeDLRequest(url), url).apply { addOption("--no-playlist") }
 

@@ -26,9 +26,12 @@ object Shazam {
     // <artist>. https://..."), by link. the shazam page itself cannot be trusted: without a browser
     // it often shows some other trending song, so the shared text is the best source there is
     private val shared = java.util.concurrent.ConcurrentHashMap<String, Song>()
+    // what was shared with each link, shown when the song could not be read so it can be fixed
+    private val sharedText = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     // call with any shared or pasted text before its links are downloaded
     fun remember(text: String) {
+        extractLinks(text).filter { isLink(it) }.forEach { sharedText[it] = text.take(300) }
         fromShareText(text)?.let { (link, song) -> shared[link] = song }
     }
 
@@ -43,7 +46,8 @@ object Shazam {
             runCatching { itunesLookup(id) }.getOrNull()?.let { return it }
             runCatching { parse(get(finalUrl), id) }.getOrNull()?.let { return it }
         }
-        error("Could not tell which song that Shazam link is. Share it straight from the Shazam app so the song name comes with it")
+        val received = sharedText[link]?.let { " Shazam sent: \"${it.replace(Regex("\\s+"), " ")}\"" }.orEmpty()
+        error("Could not tell which song that Shazam link is.$received")
     }
 
     // ---- shared text and links, kept free of android so they can be unit tested ----
@@ -51,14 +55,18 @@ object Shazam {
     // the link and the song from shazam's share text, or null when the text is not that
     fun fromShareText(text: String): Pair<String, Song>? {
         val link = extractLinks(text).firstOrNull { isLink(it) } ?: return null
-        val match = Regex("""discover\s+(.+?)\s*https?://""", RegexOption.DOT_MATCHES_ALL).find(text) ?: return null
-        val phrase = match.groupValues[1].trim().removeSuffix(".").trim()
+        // the words around the link, without any links: "I used Shazam to discover X by Y.",
+        // "Found X by Y with Shazam, have a listen:", "Check out X by Y on Shazam"
+        var phrase = text.split(Regex("\\s+")).filterNot { it.startsWith("http://") || it.startsWith("https://") }.joinToString(" ")
+        phrase = phrase.replace(Regex("""^.*?\b(?:discover(?:ed)?|found|check out|listen to|listening to)\s+""", RegexOption.IGNORE_CASE), "")
+        phrase = phrase.replace(Regex("""\s+(?:with|on|via|using)\s+shazam\b.*$""", RegexOption.IGNORE_CASE), "")
+        phrase = phrase.replace(Regex("""[\s.,:;!-]+$"""), "").trim()
         // the last lower case " by " splits them, so "Stand By Me by Ben E. King" works
         val split = phrase.lastIndexOf(" by ")
         if (split <= 0) return null
-        val title = phrase.substring(0, split).trim()
-        val artist = phrase.substring(split + 4).trim()
-        if (title.isBlank() || artist.isBlank()) return null
+        val title = phrase.substring(0, split).trim().removeSurrounding("\"")
+        val artist = phrase.substring(split + 4).trim().removeSurrounding("\"")
+        if (title.isBlank() || artist.isBlank() || title.length > 120 || artist.length > 120) return null
         return link to Song(title, artist, null)
     }
 

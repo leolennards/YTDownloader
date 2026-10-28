@@ -79,7 +79,11 @@ class MainActivity : ComponentActivity() {
 
     private fun readShare(intent: Intent?) {
         when (intent?.action) {
-            Intent.ACTION_SEND -> if (intent.type == "text/plain") sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
+            // some apps (shazam) put the song's name in the subject and only the link in the text
+            Intent.ACTION_SEND -> if (intent.type == "text/plain") {
+                sharedText = listOfNotNull(intent.getStringExtra(Intent.EXTRA_SUBJECT), intent.getStringExtra(Intent.EXTRA_TEXT))
+                    .filter { it.isNotBlank() }.joinToString("\n").ifBlank { null }
+            }
             ACTION_NEW_DOWNLOAD, ACTION_OPEN_LIBRARY -> shortcut = intent.action
         }
     }

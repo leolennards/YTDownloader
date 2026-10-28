@@ -60,6 +60,19 @@ class ShazamTest {
             Shazam.Song("Stand By Me", "Ben E. King", null),
             Shazam.fromShareText("I used Shazam to discover Stand By Me by Ben E. King. https://shz.am/t123")?.second,
         )
+        // the other ways shazam words it
+        assertEquals(
+            Shazam.Song("Circadian Rhythm", "Drake", null),
+            Shazam.fromShareText("Found Circadian Rhythm by Drake with Shazam, have a listen: https://www.shazam.com/track/1/circadian-rhythm")?.second,
+        )
+        assertEquals(
+            Shazam.Song("Lay It Down", "Lloyd", null),
+            Shazam.fromShareText("Lay It Down by Lloyd\nhttps://www.shazam.com/track/2/lay-it-down")?.second,
+        )
+        assertEquals(
+            Shazam.Song("Lay It Down", "Lloyd", null),
+            Shazam.fromShareText("Check out Lay It Down by Lloyd on Shazam https://shz.am/t2")?.second,
+        )
         assertNull(Shazam.fromShareText("https://www.shazam.com/track/524406447"))
         assertNull(Shazam.fromShareText("I used Shazam to discover Song by Artist. https://youtube.com/watch?v=x"))
     }

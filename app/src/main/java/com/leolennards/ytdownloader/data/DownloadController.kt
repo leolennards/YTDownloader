@@ -692,7 +692,8 @@ object DownloadController {
         } catch (e: Exception) {
             if (id !in cancelled) {
                 Log.e(TAG, "download failed", e)
-                update(id) { it.copy(status = JobStatus.Failed, error = friendlyMessage(e)) }
+                // keep the full message for "Show details" when the download itself never started
+                update(id) { it.copy(status = JobStatus.Failed, error = friendlyMessage(e), errorDetails = it.errorDetails ?: e.message) }
             }
         } finally {
             dir.listFiles { f -> f.name.startsWith("$id.") }?.forEach { it.delete() }

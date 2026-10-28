@@ -73,6 +73,16 @@ class ShazamTest {
             Shazam.Song("Lay It Down", "Lloyd", null),
             Shazam.fromShareText("Check out Lay It Down by Lloyd on Shazam https://shz.am/t2")?.second,
         )
+        // subject and message together, as the share arrives from the shazam app
+        assertEquals(
+            Shazam.Song("Sweeterman", "Drake", null),
+            Shazam.fromShareText("Sweeterman - Drake\nI used Shazam to discover Sweeterman by Drake. https://www.shazam.com/track/3/sweeterman")?.second,
+        )
+        // only the subject has the name
+        assertEquals(
+            Shazam.Song("Sweeterman", "Drake", null),
+            Shazam.fromShareText("Sweeterman - Drake\nhttps://www.shazam.com/track/3/sweeterman")?.second,
+        )
         assertNull(Shazam.fromShareText("https://www.shazam.com/track/524406447"))
         assertNull(Shazam.fromShareText("I used Shazam to discover Song by Artist. https://youtube.com/watch?v=x"))
     }

@@ -55,19 +55,42 @@ object Shazam {
     // the link and the song from shazam's share text, or null when the text is not that
     fun fromShareText(text: String): Pair<String, Song>? {
         val link = extractLinks(text).firstOrNull { isLink(it) } ?: return null
-        // the words around the link, without any links: "I used Shazam to discover X by Y.",
-        // "Found X by Y with Shazam, have a listen:", "Check out X by Y on Shazam"
-        var phrase = text.split(Regex("\\s+")).filterNot { it.startsWith("http://") || it.startsWith("https://") }.joinToString(" ")
-        phrase = phrase.replace(Regex("""^.*?\b(?:discover(?:ed)?|found|check out|listen to|listening to)\s+""", RegexOption.IGNORE_CASE), "")
+        // shazam sends a subject ("Sweeterman - Drake") and a message, so each line is read on its own.
+        // "X by Y" is the clearest, so every line is tried for that first
+        val lines = text.lines().map { withoutLinks(it) }.filter { it.isNotBlank() }
+        val song = lines.firstNotNullOfOrNull { byPhrase(it) }
+            ?: lines.firstNotNullOfOrNull { dashPhrase(it) }
+            ?: return null
+        return link to song
+    }
+
+    private fun withoutLinks(line: String): String =
+        line.split(Regex("\\s+")).filterNot { it.startsWith("http://") || it.startsWith("https://") }.joinToString(" ").trim()
+
+    // "I used Shazam to discover X by Y.", "Found X by Y with Shazam, have a listen:", "X by Y"
+    private fun byPhrase(line: String): Song? {
+        var phrase = line.replace(Regex("""^.*?\b(?:discover(?:ed)?|found|check out|listen to|listening to)\s+""", RegexOption.IGNORE_CASE), "")
         phrase = phrase.replace(Regex("""\s+(?:with|on|via|using)\s+shazam\b.*$""", RegexOption.IGNORE_CASE), "")
         phrase = phrase.replace(Regex("""[\s.,:;!-]+$"""), "").trim()
         // the last lower case " by " splits them, so "Stand By Me by Ben E. King" works
         val split = phrase.lastIndexOf(" by ")
         if (split <= 0) return null
-        val title = phrase.substring(0, split).trim().removeSurrounding("\"")
-        val artist = phrase.substring(split + 4).trim().removeSurrounding("\"")
+        return song(phrase.substring(0, split), phrase.substring(split + 4))
+    }
+
+    // the subject on its own: "Sweeterman - Drake" (song first, then artist)
+    private fun dashPhrase(line: String): Song? {
+        val phrase = line.replace(Regex("""[\s.,:;!]+$"""), "").trim()
+        val parts = phrase.split(" - ")
+        if (parts.size != 2) return null
+        return song(parts[0], parts[1])
+    }
+
+    private fun song(rawTitle: String, rawArtist: String): Song? {
+        val title = rawTitle.trim().removeSurrounding("\"")
+        val artist = rawArtist.trim().removeSurrounding("\"")
         if (title.isBlank() || artist.isBlank() || title.length > 120 || artist.length > 120) return null
-        return link to Song(title, artist, null)
+        return Song(title, artist, null)
     }
 
     // shazam.com/song/1488408568/blinding-lights -> 1488408568 (an apple music song id)

@@ -40,6 +40,38 @@ class ShazamTest {
     }
 
     @Test
+    fun ignoresAPageAboutAnotherSong() {
+        // without a browser shazam often shows a trending song instead of the one in the link
+        val html = """<script type="application/ld+json">{"@type":"MusicRecording","@id":"https://www.shazam.com/song/1787023936/dtmf",
+            "name":"DtMF","byArtist":"Bad Bunny"}</script>"""
+        assertNull(Shazam.parse(html, id = "1488408568"))
+        assertEquals("DtMF", Shazam.parse(html, id = "1787023936")?.title)
+    }
+
+    @Test
+    fun readsTheSongFromSharedText() {
+        val (link, song) = Shazam.fromShareText(
+            "I used Shazam to discover Blinding Lights by The Weeknd. https://www.shazam.com/track/524406447/blinding-lights",
+        )!!
+        assertEquals("https://www.shazam.com/track/524406447/blinding-lights", link)
+        assertEquals(Shazam.Song("Blinding Lights", "The Weeknd", null), song)
+        // "By" in the title and dots in the artist
+        assertEquals(
+            Shazam.Song("Stand By Me", "Ben E. King", null),
+            Shazam.fromShareText("I used Shazam to discover Stand By Me by Ben E. King. https://shz.am/t123")?.second,
+        )
+        assertNull(Shazam.fromShareText("https://www.shazam.com/track/524406447"))
+        assertNull(Shazam.fromShareText("I used Shazam to discover Song by Artist. https://youtube.com/watch?v=x"))
+    }
+
+    @Test
+    fun findsTheAppleMusicId() {
+        assertEquals("1488408568", Shazam.appleId("https://www.shazam.com/song/1488408568/blinding-lights?referrer=share"))
+        assertEquals("1488408568", Shazam.appleId("https://www.shazam.com/en-us/song/1488408568/blinding-lights"))
+        assertNull(Shazam.appleId("https://www.shazam.com/track/524406447/blinding-lights"))
+    }
+
+    @Test
     fun readsArtistObjectsAndEscapes() {
         val html = """<script type="application/ld+json">{"@type":"MusicRecording","name":"Movin&#x27; To The Sun",
             "byArtist":[{"@type":"MusicGroup","name":"HUGEL"},{"name":"Ultra Naté"}]}</script>"""

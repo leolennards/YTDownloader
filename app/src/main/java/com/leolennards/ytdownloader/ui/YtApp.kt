@@ -63,6 +63,7 @@ import com.leolennards.ytdownloader.data.FetchState
 import com.leolennards.ytdownloader.data.JobStatus
 import com.leolennards.ytdownloader.data.MediaFormat
 import com.leolennards.ytdownloader.data.QueueSummary
+import com.leolennards.ytdownloader.data.Shazam
 import com.leolennards.ytdownloader.data.extractLinks
 import com.leolennards.ytdownloader.data.isPlaylistLink
 import com.leolennards.ytdownloader.data.toItem
@@ -230,6 +231,8 @@ fun YtApp(
     LaunchedEffect(sharedText) {
         if (sharedText != null) {
             val links = extractLinks(sharedText)
+            // shazam puts the song's name in the shared text, keep it for when the link is read
+            Shazam.remember(sharedText)
             if (links.isNotEmpty()) {
                 if (settings.autoDownloadShares) {
                     val sharedFormat = if (settings.shareFormatIndex == 1) MediaFormat.MP4 else MediaFormat.MP3
@@ -385,6 +388,7 @@ fun YtApp(
                             screen = Screen.Preview
                         },
                         onQueue = { links ->
+                            Shazam.remember(url)
                             withNotificationPermission {
                                 val message = queueLinks(links, format, settings.defaultHeight)
                                 url = ""

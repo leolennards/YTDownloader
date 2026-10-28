@@ -253,8 +253,10 @@ object DownloadController {
             }
             try {
                 // a shazam link is swapped for the same song on youtube music
-                val shazam = if (Shazam.isLink(url)) fromShazam(url) else null
-                val target = shazam?.first ?: url
+                val link = extractLinks(url).firstOrNull() ?: url
+                Shazam.remember(url)
+                val shazam = if (Shazam.isLink(link)) fromShazam(link) else null
+                val target = shazam?.first ?: link
                 val song = shazam?.second
                 val info = lookup(target)
                 val meta = VideoMeta(

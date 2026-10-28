@@ -6,10 +6,10 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 // shazam only tells you what a song is, it has no audio to download. so a shazam link is read for
-// the song's title, artist and length, and that song is then found on youtube music and downloaded
-// from there. the shazam page has these in a schema.org MusicRecording block (no account needed)
+// the song's title and artist, and that song is then found on youtube music and downloaded from there
 object Shazam {
     private const val TIMEOUT_MS = 10000
+    private const val USER_AGENT = "Mozilla/5.0 (Linux; Android 14) AnyGrab"
 
     data class Song(val title: String, val artist: String, val durationSeconds: Int?)
 
@@ -22,25 +22,93 @@ object Shazam {
         return host == "shazam.com" || host.endsWith(".shazam.com") || host == "shz.am"
     }
 
-    // reads the song from a shazam link, throws when the page is not a song
+    // songs read from the text shazam shares with its links ("I used Shazam to discover <song> by
+    // <artist>. https://..."), by link. the shazam page itself cannot be trusted: without a browser
+    // it often shows some other trending song, so the shared text is the best source there is
+    private val shared = java.util.concurrent.ConcurrentHashMap<String, Song>()
+
+    // call with any shared or pasted text before its links are downloaded
+    fun remember(text: String) {
+        fromShareText(text)?.let { (link, song) -> shared[link] = song }
+    }
+
+    // reads the song from a shazam link: the shared text first, then apple music (song links carry
+    // the apple music id), then the page, but only when the page really is about that song
     fun song(url: String): Song {
-        val connection = URL(url.trim()).openConnection() as HttpURLConnection
+        val link = url.trim()
+        shared[link]?.let { return it }
+        val finalUrl = runCatching { resolve(link) }.getOrDefault(link)
+        val id = appleId(finalUrl)
+        if (id != null) {
+            runCatching { itunesLookup(id) }.getOrNull()?.let { return it }
+            runCatching { parse(get(finalUrl), id) }.getOrNull()?.let { return it }
+        }
+        error("Could not tell which song that Shazam link is. Share it straight from the Shazam app so the song name comes with it")
+    }
+
+    // ---- shared text and links, kept free of android so they can be unit tested ----
+
+    // the link and the song from shazam's share text, or null when the text is not that
+    fun fromShareText(text: String): Pair<String, Song>? {
+        val link = extractLinks(text).firstOrNull { isLink(it) } ?: return null
+        val match = Regex("""discover\s+(.+?)\s*https?://""", RegexOption.DOT_MATCHES_ALL).find(text) ?: return null
+        val phrase = match.groupValues[1].trim().removeSuffix(".").trim()
+        // the last lower case " by " splits them, so "Stand By Me by Ben E. King" works
+        val split = phrase.lastIndexOf(" by ")
+        if (split <= 0) return null
+        val title = phrase.substring(0, split).trim()
+        val artist = phrase.substring(split + 4).trim()
+        if (title.isBlank() || artist.isBlank()) return null
+        return link to Song(title, artist, null)
+    }
+
+    // shazam.com/song/1488408568/blinding-lights -> 1488408568 (an apple music song id)
+    fun appleId(url: String): String? =
+        Regex("""shazam\.com/(?:[a-z]{2}(?:-[a-z]{2})?/)?song/(\d+)""", RegexOption.IGNORE_CASE).find(url)?.groupValues?.get(1)
+
+    // follows short links like shz.am to the real page
+    private fun resolve(url: String): String {
+        val connection = URL(url).openConnection() as HttpURLConnection
         connection.connectTimeout = TIMEOUT_MS
         connection.readTimeout = TIMEOUT_MS
         connection.instanceFollowRedirects = true
-        connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) AnyGrab")
-        val html = connection.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
-        return parse(html) ?: error("That Shazam link is not a song")
+        connection.setRequestProperty("User-Agent", USER_AGENT)
+        connection.inputStream.close()
+        return connection.url.toString()
+    }
+
+    private fun itunesLookup(id: String): Song? {
+        // the song can be missing from one country's store, so try a few
+        for (country in listOf("us", "za", "gb")) {
+            val json = JSONObject(get("https://itunes.apple.com/lookup?country=$country&id=$id"))
+            val result = json.optJSONArray("results")?.optJSONObject(0) ?: continue
+            val title = result.optString("trackName")
+            val artist = result.optString("artistName")
+            if (title.isBlank() || artist.isBlank()) continue
+            val millis = result.optLong("trackTimeMillis", 0)
+            return Song(title, artist, if (millis > 0) (millis / 1000).toInt() else null)
+        }
+        return null
+    }
+
+    private fun get(url: String): String {
+        val connection = URL(url).openConnection() as HttpURLConnection
+        connection.connectTimeout = TIMEOUT_MS
+        connection.readTimeout = TIMEOUT_MS
+        connection.setRequestProperty("User-Agent", USER_AGENT)
+        return connection.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
     }
 
     // ---- reading the page, kept free of android so it can be unit tested ----
 
-    fun parse(html: String): Song? {
+    // only a block about the song with this apple music id counts, when an id is given
+    fun parse(html: String, id: String? = null): Song? {
         val blocks = Regex("""<script[^>]*application/ld\+json[^>]*>(.*?)</script>""", RegexOption.DOT_MATCHES_ALL)
             .findAll(html).map { it.groupValues[1] }
         for (block in blocks) {
             val json = runCatching { JSONObject(block.trim()) }.getOrNull() ?: continue
             if (json.optString("@type") != "MusicRecording") continue
+            if (id != null && appleId(json.optString("@id").ifBlank { json.optString("url") }) != id) continue
             val title = decode(json.optString("name")).trim()
             val artist = decode(artistName(json.opt("byArtist"))).trim()
             if (title.isNotBlank() && artist.isNotBlank()) {

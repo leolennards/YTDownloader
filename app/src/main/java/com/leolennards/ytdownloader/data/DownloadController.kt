@@ -820,31 +820,16 @@ object DownloadController {
     // youtube search is the backup
     private fun fromShazam(url: String): Pair<String, Shazam.Song> {
         val song = Shazam.withLength(Shazam.song(url))
-        // (search, true when its top results are official songs)
-        val searches = listOf(
-            "https://music.youtube.com/search?q=" + URLEncoder.encode("${song.artist} ${song.title}", "UTF-8") + "#songs" to true,
-            "ytsearch8:${song.artist} - ${song.title}" to false,
-        )
-        val seen = mutableListOf<String>()
-        for ((search, official) in searches) {
-            val hits = runCatching {
-                val request = YoutubeDLRequest(search)
-                request.addOption("--flat-playlist")
-                request.addOption("--playlist-end", "8")
-                request.addOption("--print", "%(url)s\t%(title)s\t%(duration)s\t%(artists.0,artist,channel,uploader)s")
-                Shazam.parseHits(YoutubeDL.getInstance().execute(request).out)
-            }.onFailure {
-                Log.w(TAG, "search failed: $search", it)
-                seen += "${if (official) "YouTube Music" else "YouTube"} search failed: ${it.message?.lines()?.lastOrNull { l -> l.isNotBlank() }}"
-            }.getOrNull() ?: continue
-            seen += "${if (official) "YouTube Music" else "YouTube"} found ${hits.size}:\n${Shazam.describe(hits)}"
-            Shazam.pickBest(hits, song)?.let { return it.url to song }
-            if (official) Shazam.pickBest(hits.take(3), song, trustTitle = true)?.let { return it.url to song }
+        val found = Shazam.find(song) { link, options ->
+            val request = YoutubeDLRequest(link)
+            request.addCommands(options)
+            YoutubeDL.getInstance().execute(request).out
         }
+        found.hit?.let { return it.url to song }
         val length = song.durationSeconds?.let { " (${it}s)" }.orEmpty()
         throw SearchFailedException(
             "Could not find \"${song.title}\" by ${song.artist} on YouTube",
-            "Looked for \"${song.title}\" by ${song.artist}$length\n" + seen.joinToString("\n"),
+            "Looked for \"${song.title}\" by ${song.artist}$length\n${found.report}",
         )
     }
 
